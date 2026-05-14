@@ -1,5 +1,18 @@
 # Table of contents
 
+- [1. What is Agentic AI?](#1-what-is-agentic-ai)
+  - [1.1. AI agent orchestration patterns](#11-ai-agent-orchestration-patterns)
+    - [1.1.1 Sequential orchestration](#111-sequential-orchestration)
+    - [1.1.2 Concurrent orchestration](#112-concurrent-orchestration)
+    - [1.1.3. Group chat orchestration](#113-group-chat-orchestration)
+- [2. Agentic Document Extraction](#2-agentic-document-extraction)
+  - [2.1 Introduction](#21-introduction)
+  - [2.2. Related Works](#22-related-works)
+  - [2.3. Method](#23-method)
+    - [2.3.1. Parser Module](#231-parser-module)
+    - [2.3.2. Extraction](#232-extraction)
+    - [2.3.3 Session database](#233-session-database)
+
 # 1. What is Agentic AI?
 
 Agentic AI refers to AI systems that can autonomously plan, decide, and act to achieve specific goals with minimal human intervention. Unlike traditional AI models that mainly respond to direct prompts, agentic AI can break complex tasks into steps, use external tools, monitor progress, and adapt its actions based on feedback.
