@@ -42,14 +42,17 @@ class ParserWorkflow:
         self.metadata_store = metadata_store or SessionMetadataStore()
 
     def parse_session(self, session: CuratedDocumentSession) -> ParserResult:
+        self.metadata_store.save_session(session)
         pages = [self.parse_page(session.session_id, page) for page in self.page_iterator.iter_pages(session.pages)]
-        return ParserResult(
+        result = ParserResult(
             session_id=session.session_id,
             pages=pages,
             markdown="\n\n".join(page.markdown for page in pages),
             html="\n".join(page.html for page in pages),
             metadata={"page_count": len(pages), **session.metadata},
         )
+        self.metadata_store.save_parser_result(result)
+        return result
 
     def parse_page(self, session_id: str, page: CuratedPage) -> PageRepresentation:
         layout_graph = self.layout_detector.detect(session_id=session_id, page=page)

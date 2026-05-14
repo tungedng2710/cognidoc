@@ -1,44 +1,37 @@
-The **Parser** receives curated page images from the Curator module. Each input page has already been preprocessed, for example by rotation correction, denoising, enhancement, page splitting, and document-type classification.
+The **session database** is the central storage layer for one document-processing session. Each uploaded document creates a `session_id`. All pages, parsed elements, tables, figures, extracted fields, evidence spans, validation logs, and final JSON outputs are linked to this session.
 
-The Parser works at the **page level**, but all pages from the same multi-page document are grouped under a shared **document session**. During parsing, the system does not only generate markdown, HTML, or plain text. It also stores detailed structured information about detected elements, such as tables, figures, charts, text blocks, coordinates, reading order, logical cells, page index, and visual grounding metadata, into a **session database**.
+The database should support four main goals:
 
-This allows downstream extraction agents to reason over both the textual content and the visual structure of the document.
+First, it should preserve the **document hierarchy**:
+
+```
+DocumentSession
+└── Page
+    └── LayoutElement
+        ├── TextBlock
+        ├── Table
+        │   └── TableCell
+        └── Figure
+```
+
+Second, every parsed object should preserve **visual grounding**, including page number, bounding box, confidence score, and links back to the original page image.
+
+Third, the database should support both **human-readable outputs** such as markdown and HTML, and **machine-readable outputs** such as JSON and structured table cells.
+
+#### **2.3.3.1. Entity Relationship Overview**
 
 ```mermaid
-flowchart TD
-    A[Curated Document Session] --> B[Page Iterator]
+erDiagram
+    DOCUMENT_SESSION ||--o{ PAGE : contains
+    DOCUMENT_SESSION ||--o{ LAYOUT_ELEMENT : owns
+    PAGE ||--o{ LAYOUT_ELEMENT : contains
 
-    B --> C[Input Page Image<br/>rotation-corrected, denoised, enhanced]
+    LAYOUT_ELEMENT ||--o| TEXT_BLOCK : represents
+    LAYOUT_ELEMENT ||--o| TABLE_OBJECT : represents
+    LAYOUT_ELEMENT ||--o| FIGURE : represents
 
-    C --> D[Step 1: Layout Detection]
-    D --> E[Detect Regions<br/>text blocks, tables, figures, charts, headers, footers]
-    E --> F[Reading Order Recognition]
+    TABLE_OBJECT ||--o{ TABLE_CELL : contains
 
-    F --> G[Page Layout Graph]
-    G --> H{Region Type Router}
-
-    H --> I[OCR Text Block Processor]
-    H --> J[Table Recognition Processor]
-    H --> K[Chart / Graph / Figure Processor]
-
-    I --> I1[OCR + Text Line Detection]
-    I1 --> I2[Paragraph Reconstruction]
-    I2 --> I3[Text Block Markdown]
-
-    J --> J1[Table Structure Recognition]
-    J1 --> J2[Cell Detection and Spanning]
-    J2 --> J3[Logical Cell Reconstruction]
-    J3 --> J4[Table Markdown / HTML / JSON]
-
-    K --> K1[Figure / Chart Classification]
-    K1 --> K2[Caption Association]
-    K2 --> K3[Visual Summary or Metadata]
-    K3 --> K4[Figure Record]
-
-    I3 --> L[Page-level Representation]
-    J4 --> L
-    K4 --> L
-
-    L --> M[Assemble Page Markdown / HTML]
-    L --> N[Save Element Metadata]
+    TEXT_BLOCK }o--o{ FIGURE_TEXT_LINK : linked_to
+    FIGURE ||--o{ FIGURE_TEXT_LINK : has
 ```

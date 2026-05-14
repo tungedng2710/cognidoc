@@ -81,6 +81,7 @@ class ParsedElement:
     text: str = ""
     data: dict[str, Any] = field(default_factory=dict)
     bbox: BoundingBox | None = None
+    confidence: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

@@ -61,6 +61,7 @@ class OCRTextBlockProcessor:
             html=f"<p>{text}</p>",
             text=text,
             bbox=region.bbox,
+            confidence=region.confidence,
             metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
         )
 
@@ -81,6 +82,7 @@ class TableRecognitionProcessor:
             html=html,
             data={"rows": table_rows, "cells": []},
             bbox=region.bbox,
+            confidence=region.confidence,
             metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
         )
 
@@ -100,6 +102,7 @@ class FigureProcessor:
             text=summary,
             data={"summary": summary, "caption": None},
             bbox=region.bbox,
+            confidence=region.confidence,
             metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
         )
 
