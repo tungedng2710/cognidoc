@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "dummy",
+      "description": "Deterministic local OCR backend for development and tests.",
+      "class_path": "src.parser.tools.dummy_ocr.DummyOCRTool",
+      "enabled": true,
+      "priority": 10,
+      "capabilities": [
+        "analyze_layout",
+        "detect_table",
+        "detect_figure",
+        "recognize_text"
+      ],
+      "config": {}
+    },
+    {
+      "name": "paddle",
+      "description": "Optional PaddleOCR adapter for OCR text recognition.",
+      "class_path": "src.parser.tools.paddle_ocr.PaddleOCRTool",
+      "enabled": false,
+      "priority": 20,
+      "capabilities": [
+        "recognize_text"
+      ],
+      "config": {
+        "language": "en",
+        "use_angle_cls": true
+      }
+    },
+    {
+      "name": "chandra",
+      "description": "Optional Chandra OCR adapter for image-to-markdown layout OCR.",
+      "class_path": "src.parser.tools.chandra_ocr.ChandraOCRTool",
+      "enabled": false,
+      "priority": 30,
+      "capabilities": [
+        "analyze_layout",
+        "recognize_text"
+      ],
+      "config": {
+        "model_name": "datalab-to/chandra-ocr-2",
+        "prompt_type": "ocr_layout"
+      }
+    }
+  ]
+}

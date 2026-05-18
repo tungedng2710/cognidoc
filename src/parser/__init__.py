@@ -11,6 +11,7 @@ from .models import (
     ParsedElement,
 )
 from .workflow import ParserWorkflow
+from .tools_manager import OCRTool, OCRToolManager
 
 __all__ = [
     "CuratedDocumentSession",
@@ -22,4 +23,6 @@ __all__ = [
     "ParserResult",
     "ParsedElement",
     "ParserWorkflow",
+    "OCRTool",
+    "OCRToolManager",
 ]

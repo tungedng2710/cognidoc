@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from .models import (
-    BoundingBox,
     CuratedPage,
     ElementType,
     LayoutRegion,
     PageLayoutGraph,
     ParsedElement,
 )
+from .tools_manager import OCRToolManager
 
 
 class PageIterator:
@@ -20,91 +20,47 @@ class PageIterator:
 
 
 class LayoutDetector:
-    """Placeholder layout detector with deterministic dummy regions."""
+    """Detect page layout through the configured OCR tool manager."""
+
+    def __init__(self, tool_manager: OCRToolManager | None = None, tool_name: str | None = None) -> None:
+        self.tool_manager = tool_manager or OCRToolManager()
+        self.tool_name = tool_name
 
     def detect(self, session_id: str, page: CuratedPage) -> PageLayoutGraph:
-        regions = [
-            LayoutRegion(
-                region_id=f"p{page.page_index}-text-1",
-                element_type=ElementType.TEXT,
-                bbox=BoundingBox(x=0.05, y=0.08, width=0.9, height=0.2),
-                reading_order=1,
-            ),
-            LayoutRegion(
-                region_id=f"p{page.page_index}-table-1",
-                element_type=ElementType.TABLE,
-                bbox=BoundingBox(x=0.05, y=0.32, width=0.9, height=0.28),
-                reading_order=2,
-            ),
-            LayoutRegion(
-                region_id=f"p{page.page_index}-figure-1",
-                element_type=ElementType.FIGURE,
-                bbox=BoundingBox(x=0.1, y=0.66, width=0.8, height=0.24),
-                reading_order=3,
-            ),
-        ]
-        edges = [(regions[index].region_id, regions[index + 1].region_id) for index in range(len(regions) - 1)]
-        return PageLayoutGraph(session_id=session_id, page_index=page.page_index, regions=regions, edges=edges)
+        return self.tool_manager.analyze_layout(session_id=session_id, page=page, tool_name=self.tool_name)
 
 
 class OCRTextBlockProcessor:
-    """Placeholder OCR and paragraph reconstruction processor."""
+    """OCR and paragraph reconstruction processor."""
+
+    def __init__(self, tool_manager: OCRToolManager | None = None, tool_name: str | None = None) -> None:
+        self.tool_manager = tool_manager or OCRToolManager()
+        self.tool_name = tool_name
 
     def process(self, page: CuratedPage, region: LayoutRegion) -> ParsedElement:
-        text = f"Dummy text block for page {page.page_index}."
-        return ParsedElement(
-            element_id=region.region_id,
-            element_type=region.element_type,
-            page_index=page.page_index,
-            reading_order=region.reading_order,
-            markdown=text,
-            html=f"<p>{text}</p>",
-            text=text,
-            bbox=region.bbox,
-            confidence=region.confidence,
-            metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
-        )
+        return self.tool_manager.recognize_text(session_id="", page=page, region=region, tool_name=self.tool_name)
 
 
 class TableRecognitionProcessor:
-    """Placeholder table structure and logical cell processor."""
+    """Table structure and logical cell processor."""
+
+    def __init__(self, tool_manager: OCRToolManager | None = None, tool_name: str | None = None) -> None:
+        self.tool_manager = tool_manager or OCRToolManager()
+        self.tool_name = tool_name
 
     def process(self, page: CuratedPage, region: LayoutRegion) -> ParsedElement:
-        table_rows = [["Header A", "Header B"], ["Value A", "Value B"]]
-        markdown = "| Header A | Header B |\n| --- | --- |\n| Value A | Value B |"
-        html = "<table><tr><th>Header A</th><th>Header B</th></tr><tr><td>Value A</td><td>Value B</td></tr></table>"
-        return ParsedElement(
-            element_id=region.region_id,
-            element_type=region.element_type,
-            page_index=page.page_index,
-            reading_order=region.reading_order,
-            markdown=markdown,
-            html=html,
-            data={"rows": table_rows, "cells": []},
-            bbox=region.bbox,
-            confidence=region.confidence,
-            metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
-        )
+        return self.tool_manager.detect_table(session_id="", page=page, region=region, tool_name=self.tool_name)
 
 
 class FigureProcessor:
-    """Placeholder figure, chart, and caption processor."""
+    """Figure, chart, and caption processor."""
+
+    def __init__(self, tool_manager: OCRToolManager | None = None, tool_name: str | None = None) -> None:
+        self.tool_manager = tool_manager or OCRToolManager()
+        self.tool_name = tool_name
 
     def process(self, page: CuratedPage, region: LayoutRegion) -> ParsedElement:
-        summary = f"Dummy visual summary for {region.element_type} on page {page.page_index}."
-        return ParsedElement(
-            element_id=region.region_id,
-            element_type=region.element_type,
-            page_index=page.page_index,
-            reading_order=region.reading_order,
-            markdown=f"![{summary}]({page.image_path})",
-            html=f'<figure><img src="{page.image_path}" alt="{summary}"><figcaption>{summary}</figcaption></figure>',
-            text=summary,
-            data={"summary": summary, "caption": None},
-            bbox=region.bbox,
-            confidence=region.confidence,
-            metadata={"processor": self.__class__.__name__, "image_path": page.image_path},
-        )
+        return self.tool_manager.detect_figure(session_id="", page=page, region=region, tool_name=self.tool_name)
 
 
 class RegionTypeRouter:
@@ -115,10 +71,12 @@ class RegionTypeRouter:
         text_processor: OCRTextBlockProcessor | None = None,
         table_processor: TableRecognitionProcessor | None = None,
         figure_processor: FigureProcessor | None = None,
+        tool_manager: OCRToolManager | None = None,
     ) -> None:
-        self.text_processor = text_processor or OCRTextBlockProcessor()
-        self.table_processor = table_processor or TableRecognitionProcessor()
-        self.figure_processor = figure_processor or FigureProcessor()
+        shared_tool_manager = tool_manager or OCRToolManager()
+        self.text_processor = text_processor or OCRTextBlockProcessor(shared_tool_manager)
+        self.table_processor = table_processor or TableRecognitionProcessor(shared_tool_manager)
+        self.figure_processor = figure_processor or FigureProcessor(shared_tool_manager)
 
     def process(self, page: CuratedPage, region: LayoutRegion) -> ParsedElement:
         if region.element_type in {ElementType.TEXT, ElementType.HEADER, ElementType.FOOTER}:
