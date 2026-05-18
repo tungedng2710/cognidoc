@@ -1,0 +1,445 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "cognidoc-sample",
+  "document": {
+    "session_id": "sample-session-001",
+    "document_id": "sample-document-001",
+    "source_path": "samples/sample-document.pdf",
+    "metadata": {
+      "language": "en",
+      "document_type": "invoice",
+      "bbox_units": "pixels"
+    }
+  },
+  "pages": [
+    {
+      "page_id": "sample-document-001-page-001",
+      "session_id": "sample-session-001",
+      "page_index": 1,
+      "image_path": "samples/images/sample-document-page-001.png",
+      "width": 1200,
+      "height": 1600,
+      "layout_elements": [
+        {
+          "element_id": "p1-header-1",
+          "element_type": "header",
+          "reading_order": 1,
+          "bbox": {
+            "x": 72,
+            "y": 48,
+            "width": 1056,
+            "height": 96
+          },
+          "confidence": 1.0,
+          "text": "ACME SUPPLIES LLC",
+          "markdown": "ACME SUPPLIES LLC",
+          "html": "<h1>ACME SUPPLIES LLC</h1>",
+          "data": {
+            "lines": [
+              {
+                "text": "ACME SUPPLIES LLC",
+                "bbox": {
+                  "x": 72,
+                  "y": 48,
+                  "width": 420,
+                  "height": 42
+                },
+                "confidence": 1.0
+              }
+            ]
+          },
+          "metadata": {
+            "annotated_by": "human",
+            "image_path": "samples/images/sample-document-page-001.png"
+          }
+        },
+        {
+          "element_id": "p1-text-1",
+          "element_type": "text",
+          "reading_order": 2,
+          "bbox": {
+            "x": 72,
+            "y": 180,
+            "width": 480,
+            "height": 160
+          },
+          "confidence": 1.0,
+          "text": "Invoice No: INV-1001\nInvoice Date: 2026-05-01\nDue Date: 2026-05-31",
+          "markdown": "Invoice No: INV-1001\n\nInvoice Date: 2026-05-01\n\nDue Date: 2026-05-31",
+          "html": "<p>Invoice No: INV-1001<br>Invoice Date: 2026-05-01<br>Due Date: 2026-05-31</p>",
+          "data": {
+            "lines": [
+              {
+                "text": "Invoice No: INV-1001",
+                "bbox": {
+                  "x": 72,
+                  "y": 180,
+                  "width": 260,
+                  "height": 32
+                },
+                "confidence": 1.0
+              },
+              {
+                "text": "Invoice Date: 2026-05-01",
+                "bbox": {
+                  "x": 72,
+                  "y": 224,
+                  "width": 330,
+                  "height": 32
+                },
+                "confidence": 1.0
+              },
+              {
+                "text": "Due Date: 2026-05-31",
+                "bbox": {
+                  "x": 72,
+                  "y": 268,
+                  "width": 292,
+                  "height": 32
+                },
+                "confidence": 1.0
+              }
+            ]
+          },
+          "metadata": {
+            "annotated_by": "human",
+            "image_path": "samples/images/sample-document-page-001.png"
+          }
+        },
+        {
+          "element_id": "p1-table-1",
+          "element_type": "table",
+          "reading_order": 3,
+          "bbox": {
+            "x": 72,
+            "y": 420,
+            "width": 1056,
+            "height": 300
+          },
+          "confidence": 1.0,
+          "text": "",
+          "markdown": "| Item | Qty | Unit Price | Amount |\n| --- | ---: | ---: | ---: |\n| Paper ream | 4 | 6.00 | 24.00 |\n| Printer ink | 2 | 45.00 | 90.00 |",
+          "html": "<table><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr><tr><td>Paper ream</td><td>4</td><td>6.00</td><td>24.00</td></tr><tr><td>Printer ink</td><td>2</td><td>45.00</td><td>90.00</td></tr></table>",
+          "data": {
+            "rows": [
+              [
+                "Item",
+                "Qty",
+                "Unit Price",
+                "Amount"
+              ],
+              [
+                "Paper ream",
+                "4",
+                "6.00",
+                "24.00"
+              ],
+              [
+                "Printer ink",
+                "2",
+                "45.00",
+                "90.00"
+              ]
+            ],
+            "cells": [
+              {
+                "row_index": 0,
+                "column_index": 0,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Item",
+                "bbox": {
+                  "x": 72,
+                  "y": 420,
+                  "width": 480,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 0,
+                "column_index": 1,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Qty",
+                "bbox": {
+                  "x": 552,
+                  "y": 420,
+                  "width": 144,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 0,
+                "column_index": 2,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Unit Price",
+                "bbox": {
+                  "x": 696,
+                  "y": 420,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 0,
+                "column_index": 3,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Amount",
+                "bbox": {
+                  "x": 912,
+                  "y": 420,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 1,
+                "column_index": 0,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Paper ream",
+                "bbox": {
+                  "x": 72,
+                  "y": 492,
+                  "width": 480,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 1,
+                "column_index": 1,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "4",
+                "bbox": {
+                  "x": 552,
+                  "y": 492,
+                  "width": 144,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 1,
+                "column_index": 2,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "6.00",
+                "bbox": {
+                  "x": 696,
+                  "y": 492,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 1,
+                "column_index": 3,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "24.00",
+                "bbox": {
+                  "x": 912,
+                  "y": 492,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 2,
+                "column_index": 0,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "Printer ink",
+                "bbox": {
+                  "x": 72,
+                  "y": 564,
+                  "width": 480,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 2,
+                "column_index": 1,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "2",
+                "bbox": {
+                  "x": 552,
+                  "y": 564,
+                  "width": 144,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 2,
+                "column_index": 2,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "45.00",
+                "bbox": {
+                  "x": 696,
+                  "y": 564,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              },
+              {
+                "row_index": 2,
+                "column_index": 3,
+                "row_span": 1,
+                "column_span": 1,
+                "text": "90.00",
+                "bbox": {
+                  "x": 912,
+                  "y": 564,
+                  "width": 216,
+                  "height": 72
+                },
+                "confidence": 1.0
+              }
+            ]
+          },
+          "metadata": {
+            "annotated_by": "human",
+            "image_path": "samples/images/sample-document-page-001.png"
+          }
+        },
+        {
+          "element_id": "p1-figure-1",
+          "element_type": "figure",
+          "reading_order": 4,
+          "bbox": {
+            "x": 744,
+            "y": 180,
+            "width": 384,
+            "height": 160
+          },
+          "confidence": 1.0,
+          "text": "Company logo",
+          "markdown": "![Company logo](samples/images/sample-document-page-001.png)",
+          "html": "<figure><img src=\"samples/images/sample-document-page-001.png\" alt=\"Company logo\"><figcaption>Company logo</figcaption></figure>",
+          "data": {
+            "caption": "Company logo",
+            "summary": "A rectangular company logo in the upper-right area of the invoice.",
+            "linked_text_element_ids": [
+              "p1-header-1"
+            ]
+          },
+          "metadata": {
+            "annotated_by": "human",
+            "image_path": "samples/images/sample-document-page-001.png"
+          }
+        },
+        {
+          "element_id": "p1-text-2",
+          "element_type": "text",
+          "reading_order": 5,
+          "bbox": {
+            "x": 744,
+            "y": 780,
+            "width": 384,
+            "height": 96
+          },
+          "confidence": 1.0,
+          "text": "Subtotal: 114.00\nTax: 11.40\nTotal: 125.40",
+          "markdown": "Subtotal: 114.00\n\nTax: 11.40\n\nTotal: 125.40",
+          "html": "<p>Subtotal: 114.00<br>Tax: 11.40<br>Total: 125.40</p>",
+          "data": {
+            "lines": [
+              {
+                "text": "Subtotal: 114.00",
+                "bbox": {
+                  "x": 744,
+                  "y": 780,
+                  "width": 240,
+                  "height": 28
+                },
+                "confidence": 1.0
+              },
+              {
+                "text": "Tax: 11.40",
+                "bbox": {
+                  "x": 744,
+                  "y": 812,
+                  "width": 168,
+                  "height": 28
+                },
+                "confidence": 1.0
+              },
+              {
+                "text": "Total: 125.40",
+                "bbox": {
+                  "x": 744,
+                  "y": 844,
+                  "width": 204,
+                  "height": 28
+                },
+                "confidence": 1.0
+              }
+            ]
+          },
+          "metadata": {
+            "annotated_by": "human",
+            "image_path": "samples/images/sample-document-page-001.png"
+          }
+        }
+      ],
+      "page_outputs": {
+        "markdown": "ACME SUPPLIES LLC\n\nInvoice No: INV-1001\n\nInvoice Date: 2026-05-01\n\nDue Date: 2026-05-31\n\n| Item | Qty | Unit Price | Amount |\n| --- | ---: | ---: | ---: |\n| Paper ream | 4 | 6.00 | 24.00 |\n| Printer ink | 2 | 45.00 | 90.00 |\n\n![Company logo](samples/images/sample-document-page-001.png)\n\nSubtotal: 114.00\n\nTax: 11.40\n\nTotal: 125.40",
+        "html": "<h1>ACME SUPPLIES LLC</h1><p>Invoice No: INV-1001<br>Invoice Date: 2026-05-01<br>Due Date: 2026-05-31</p><table><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr><tr><td>Paper ream</td><td>4</td><td>6.00</td><td>24.00</td></tr><tr><td>Printer ink</td><td>2</td><td>45.00</td><td>90.00</td></tr></table><figure><img src=\"samples/images/sample-document-page-001.png\" alt=\"Company logo\"><figcaption>Company logo</figcaption></figure><p>Subtotal: 114.00<br>Tax: 11.40<br>Total: 125.40</p>"
+      },
+      "extracted_fields": [
+        {
+          "field_name": "invoice_number",
+          "value": "INV-1001",
+          "confidence": 1.0,
+          "evidence": [
+            {
+              "element_id": "p1-text-1",
+              "text": "Invoice No: INV-1001",
+              "bbox": {
+                "x": 72,
+                "y": 180,
+                "width": 260,
+                "height": 32
+              }
+            }
+          ]
+        },
+        {
+          "field_name": "total",
+          "value": {
+            "amount": 125.4,
+            "currency": "USD"
+          },
+          "confidence": 1.0,
+          "evidence": [
+            {
+              "element_id": "p1-text-2",
+              "text": "Total: 125.40",
+              "bbox": {
+                "x": 744,
+                "y": 844,
+                "width": 204,
+                "height": 28
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
