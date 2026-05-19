@@ -30,6 +30,14 @@ The sample file is:
 src/dataloader/sample_page_annotation.json
 ```
 
+Table annotation example files:
+
+```text
+src/dataloader/table_annotation.json
+src/dataloader/table_annotation_visualization_1.png
+src/dataloader/table_edges_sample_visualization.png
+```
+
 ## Required Page Fields
 
 Each page annotation should include:
@@ -81,6 +89,56 @@ For figures and charts, include:
 - `data.caption`: caption text if available
 - `data.summary`: human-readable visual summary
 - `data.linked_text_element_ids`: related text blocks if known
+
+## Table Annotation Example
+
+The table annotation sample uses a bank fee schedule page and demonstrates cell-level table grounding plus graph links between related cells.
+
+- [`table_annotation.json`](./table_annotation.json): full table annotation JSON for the sample table.
+- [`table_annotation_visualization_1.png`](./table_annotation_visualization_1.png): bounding-box visualization for the table, rows, columns, and cell roles.
+- [`table_edges_sample_visualization.png`](./table_edges_sample_visualization.png): selected graph-edge visualization for row neighbors, column-header links, group containment, and section containment.
+
+### Bounding Box Visualization
+
+![Table annotation bounding boxes](./table_annotation_visualization_1.png)
+
+The bounding-box visualization checks visual grounding at several levels:
+
+- table bbox
+- column headers
+- section headers
+- group rows
+- data/item cells
+- fee cells
+- group/code cells
+
+### Graph Edge Visualization
+
+![Table graph edge sample](./table_edges_sample_visualization.png)
+
+The graph visualization shows a readable subset of the full edge set. The full sample contains `88` table-cell nodes and `221` graph edges. The displayed edge types are:
+
+- `next_cell_in_row`: row-neighbor links between adjacent cells
+- `column_header_of`: column header to body-cell links
+- `group_contains`: group row to child-row links
+- `section_contains`: section header to group-row links
+
+### JSON Structure
+
+The full table annotation is stored in `table_annotation.json`. Important fields include:
+
+- `schema_version`: annotation schema version.
+- `task`: annotation task name, set to `table_cell_annotation`.
+- `document`: source document metadata, including file name, page count, and checksum.
+- `coordinate_systems`: supported coordinate spaces. This sample includes both `pdf_points` and `image_pixels`, each using a top-left origin.
+- `pages`: annotated pages. Each page records PDF dimensions, rendered image dimensions, and its detected tables.
+- `tables`: table objects with `table_id`, title, `bbox_pdf`, `bbox_image`, row/column/cell counts, rows, columns, cells, graph, and notes.
+- `columns`: column indexes, names, and column bounding boxes.
+- `rows`: row indexes, row labels, row names, and row bounding boxes.
+- `cells`: cell-level annotations with `cell_id`, row/column indexes, spans, label, PDF/image bounding boxes, text, confidence, and optional role-specific metadata.
+- `graph`: typed relationships between cell nodes, including `source`, `target`, `edge_type`, `confidence`, and edge features.
+
+Merged logical cells are represented with `col_span > 1` or `row_span > 1`. Empty physical cells are still preserved with empty text so the grid remains complete.
 
 ## Annotation Quality Rules
 
