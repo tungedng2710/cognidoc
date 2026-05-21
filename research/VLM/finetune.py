@@ -12,23 +12,14 @@
 import argparse
 from pathlib import Path
 
-import torch
-from datasets import load_dataset, Image
-from PIL import Image as PILImage
-
-from unsloth import FastVisionModel, is_bfloat16_supported
-from unsloth.trainer import UnslothVisionDataCollator
-from trl import SFTTrainer, SFTConfig
-
 
 # -----------------------------
 # Config
 # -----------------------------
-DATASET_ID = "5CD-AI/Viet-Handwriting-OCR-v2"   # <-- change this
-MODEL_NAME = "unsloth/Qwen3.5-0.8B"             # or "Qwen/Qwen3.5-0.8B"
-
-OUTPUT_DIR = "qwen35_08b_ocr_lora"
-MAX_SEQ_LENGTH = 2048
+DEFAULT_DATASET_ID = "5CD-AI/Viet-Handwriting-OCR-v2"
+DEFAULT_MODEL_NAME = "unsloth/Qwen3.5-0.8B"  # or "Qwen/Qwen3.5-0.8B"
+DEFAULT_OUTPUT_DIR = "qwen35_08b_ocr_lora"
+DEFAULT_MAX_SEQ_LENGTH = 2048
 
 OCR_PROMPT = (
     "Read the text in this image. "
@@ -41,6 +32,35 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Fine-tune Qwen3.5-0.8B for OCR with optional checkpoint resume.",
     )
+
+    data_group = parser.add_argument_group("data and model")
+    data_group.add_argument("--dataset-id", default=DEFAULT_DATASET_ID)
+    data_group.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
+    data_group.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    data_group.add_argument("--max-seq-length", type=int, default=DEFAULT_MAX_SEQ_LENGTH)
+
+    train_group = parser.add_argument_group("training")
+    train_group.add_argument("--num-train-epochs", type=float, default=3)
+    train_group.add_argument("--per-device-train-batch-size", type=int, default=1)
+    train_group.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    train_group.add_argument("--learning-rate", type=float, default=1e-4)
+    train_group.add_argument("--warmup-ratio", type=float, default=0.03)
+    train_group.add_argument("--lr-scheduler-type", default="linear")
+    train_group.add_argument("--optim", default="adamw_8bit")
+    train_group.add_argument("--weight-decay", type=float, default=0.01)
+    train_group.add_argument("--max-grad-norm", type=float, default=0.3)
+    train_group.add_argument("--logging-steps", type=int, default=10)
+    train_group.add_argument("--eval-steps", type=int, default=100)
+    train_group.add_argument("--save-steps", type=int, default=100)
+    train_group.add_argument("--seed", type=int, default=3407)
+    train_group.add_argument("--dataset-num-proc", type=int, default=1)
+
+    lora_group = parser.add_argument_group("lora")
+    lora_group.add_argument("--lora-r", type=int, default=16)
+    lora_group.add_argument("--lora-alpha", type=int, default=16)
+    lora_group.add_argument("--lora-dropout", type=float, default=0)
+
+    resume_group = parser.add_argument_group("resume")
     parser.add_argument(
         "checkpoint_folder",
         nargs="?",
@@ -50,7 +70,7 @@ def parse_args():
             "qwen35_08b_ocr_lora/checkpoint-1700."
         ),
     )
-    parser.add_argument(
+    resume_group.add_argument(
         "--resume-from-checkpoint",
         default=None,
         help="Checkpoint folder to resume from. Overrides the positional argument.",
@@ -76,10 +96,19 @@ args = parse_args()
 RESUME_FROM_CHECKPOINT = get_resume_checkpoint(args)
 
 
+import torch
+from datasets import load_dataset, Image
+from PIL import Image as PILImage
+
+from unsloth import FastVisionModel, is_bfloat16_supported
+from unsloth.trainer import UnslothVisionDataCollator
+from trl import SFTTrainer, SFTConfig
+
+
 # -----------------------------
 # Load dataset
 # -----------------------------
-dataset = load_dataset(DATASET_ID)
+dataset = load_dataset(args.dataset_id)
 
 # Ensure the image column is decoded as PIL images
 dataset = dataset.cast_column("image", Image())
@@ -133,8 +162,8 @@ eval_dataset = [convert_to_conversation(x) for x in test_raw]
 dtype = torch.bfloat16 if is_bfloat16_supported() else torch.float16
 
 model, tokenizer = FastVisionModel.from_pretrained(
-    model_name=MODEL_NAME,
-    max_seq_length=MAX_SEQ_LENGTH,
+    model_name=args.model_name,
+    max_seq_length=args.max_seq_length,
     dtype=dtype,
 
     # Qwen3.5 Unsloth docs recommend bf16/16-bit LoRA over 4-bit QLoRA.
@@ -157,13 +186,13 @@ model = FastVisionModel.get_peft_model(
     finetune_attention_modules=True,
     finetune_mlp_modules=True,
 
-    r=16,
-    lora_alpha=16,
-    lora_dropout=0,
+    r=args.lora_r,
+    lora_alpha=args.lora_alpha,
+    lora_dropout=args.lora_dropout,
     bias="none",
 
     target_modules="all-linear",
-    random_state=3407,
+    random_state=args.seed,
     use_rslora=False,
     loftq_config=None,
 
@@ -196,41 +225,41 @@ trainer = SFTTrainer(
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     args=SFTConfig(
-        output_dir=OUTPUT_DIR,
+        output_dir=args.output_dir,
 
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
 
         # Use num_train_epochs for full training.
-        num_train_epochs=3,
+        num_train_epochs=args.num_train_epochs,
 
-        learning_rate=1e-4,
-        warmup_ratio=0.03,
-        lr_scheduler_type="linear",
+        learning_rate=args.learning_rate,
+        warmup_ratio=args.warmup_ratio,
+        lr_scheduler_type=args.lr_scheduler_type,
 
-        optim="adamw_8bit",
-        weight_decay=0.01,
-        max_grad_norm=0.3,
+        optim=args.optim,
+        weight_decay=args.weight_decay,
+        max_grad_norm=args.max_grad_norm,
 
         fp16=not is_bfloat16_supported(),
         bf16=is_bfloat16_supported(),
 
-        logging_steps=10,
+        logging_steps=args.logging_steps,
         eval_strategy="steps",
-        eval_steps=100,
+        eval_steps=args.eval_steps,
         save_strategy="steps",
-        save_steps=100,
+        save_steps=args.save_steps,
 
-        seed=3407,
+        seed=args.seed,
         report_to="none",
 
         # Required for vision fine-tuning
         remove_unused_columns=False,
         dataset_text_field="",
         dataset_kwargs={"skip_prepare_dataset": True},
-        dataset_num_proc=1,
+        dataset_num_proc=args.dataset_num_proc,
 
-        max_seq_length=MAX_SEQ_LENGTH,
+        max_seq_length=args.max_seq_length,
     ),
 )
 
@@ -244,8 +273,8 @@ else:
 # -----------------------------
 # Save LoRA adapter
 # -----------------------------
-model.save_pretrained(OUTPUT_DIR)
-tokenizer.save_pretrained(OUTPUT_DIR)
+model.save_pretrained(args.output_dir)
+tokenizer.save_pretrained(args.output_dir)
 
 # Optional: save merged 16-bit model
 # model.save_pretrained_merged(
