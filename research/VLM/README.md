@@ -4,6 +4,7 @@ This folder contains scripts for fine-tuning and running OCR with `unsloth/Qwen3
 
 - `finetune.py` fine-tunes the model on the Hugging Face dataset `5CD-AI/Viet-Handwriting-OCR-v2`.
 - `predict.py` runs OCR inference on a local image with the saved LoRA adapter.
+- `demo_hf.py` runs OCR inference with the uploaded Hugging Face adapter `tungedng2710/cogniocr`.
 - `convert_to_ollama.py` exports the fine-tuned adapter to GGUF and writes an Ollama `Modelfile`.
 
 ## Install
@@ -69,6 +70,39 @@ Useful prediction arguments:
 ```
 
 If `predict.py --help` works but prediction fails with a missing dependency error, install the VLM dependencies from the install section above in the active Python environment.
+
+## Demo With Hugging Face Model
+
+The uploaded LoRA adapter is available at:
+
+```text
+tungedng2710/cogniocr
+```
+
+Run the demo with the included sample image:
+
+```bash
+cd research/VLM
+python demo_hf.py
+```
+
+Run OCR on another image:
+
+```bash
+python demo_hf.py path/to/image.png
+```
+
+Write the OCR text to a file:
+
+```bash
+python demo_hf.py path/to/image.png --output-file ocr.txt
+```
+
+The same Hugging Face adapter can also be used with `predict.py`:
+
+```bash
+python predict.py path/to/image.png --model-dir tungedng2710/cogniocr
+```
 
 ## Convert For Ollama
 
