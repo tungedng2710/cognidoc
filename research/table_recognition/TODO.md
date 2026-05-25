@@ -36,7 +36,23 @@ Convert sampled tables into graph representations suitable for graph-based model
 - [ ] Attach visual features such as bounding boxes and page coordinates.
 - [ ] Validate graph construction with visual or JSON debug outputs.
 
-## 5. Define Graph Feature Schema
+## 5. Implement Non-Graph Baselines
+
+Build baseline models that do not use graph features to establish comparison points.
+
+- [ ] Evaluate five non-graph baseline methods:
+  - [ ] UniTable: implemented code is available in `baselines/unitable`.
+  - [ ] Table Transformer: implemented code is available in `baselines/table-transformer`.
+  - [ ] CascadeTabNet: implemented code is available.
+  - [ ] TABLET: Table Structure Recognition using Encoder-only Transformers; paper available, no implementation code yet.
+  - [ ] SepFormer: Coarse-to-fine Separator Regression Network for Table Structure Recognition; paper available, no implementation code yet.
+- [ ] Train at least two baselines on subset data, covering both method types:
+  - [ ] One method with existing implementation code.
+  - [ ] One paper-only method that requires implementation.
+- [ ] Evaluate trained baselines on sampled subsets first.
+- [ ] Record baseline metrics and failure cases.
+
+## 6. Define Graph Feature Schema
 
 Standardize graph inputs so experiments are reproducible and easy to compare.
 
@@ -45,14 +61,6 @@ Standardize graph inputs so experiments are reproducible and easy to compare.
 - [ ] Define labels for structure prediction or cell relation prediction.
 - [ ] Document input/output formats for training and evaluation.
 
-## 6. Implement Non-Graph Baselines
-
-Build baseline models that do not use graph features to establish comparison points.
-
-- [ ] Implement rule-based or heuristic structure extraction.
-- [ ] Train simple ML/deep models using text and layout features only.
-- [ ] Evaluate on sampled subsets first.
-- [ ] Record baseline metrics and failure cases.
 
 ## 7. Develop Graph-Based Baselines
 
