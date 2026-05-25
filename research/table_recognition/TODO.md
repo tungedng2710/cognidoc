@@ -4,28 +4,28 @@
 
 Study PubTabNet and FinTabNet to understand available annotations, table formats, and task definitions.
 
-- [ ] Download or locate dataset metadata and samples.
-- [ ] Review annotation formats for cells, spans, structure, and text.
-- [ ] Identify useful fields for graph-based table recognition.
-- [ ] Note dataset limitations such as missing OCR, noisy labels, or domain bias.
+- [x] Download or locate dataset metadata and samples.
+- [x] Review annotation formats for cells, spans, structure, and text.
+- [x] Identify useful fields for graph-based table recognition.
+- [x] Note dataset limitations such as missing OCR, noisy labels, or domain bias.
 
 ## 2. Run Dataset EDA
 
 Analyze table statistics to understand data quality and modeling difficulty.
 
-- [ ] Count tables, rows, columns, merged cells, and empty cells.
-- [ ] Measure distributions of table size and cell-span patterns.
-- [ ] Inspect OCR/layout quality where available.
-- [ ] Summarize train, validation, and test split characteristics.
+- [x] Count tables, rows, columns, merged cells, and empty cells.
+- [x] Measure distributions of table size and cell-span patterns.
+- [x] Inspect OCR/layout quality where available.
+- [x] Summarize train, validation, and test split characteristics.
 
 ## 3. Sample Dataset Subsets
 
 Create small representative subsets for faster experiments and debugging.
 
-- [ ] Define sampling criteria by table size, complexity, and document type.
-- [ ] Build tiny, small, and medium subsets for iteration.
-- [ ] Preserve difficult cases such as merged cells and irregular layouts.
-- [ ] Save subset manifests with source IDs and split labels.
+- [x] Define sampling criteria by table size, complexity, and document type.
+- [x] Build tiny, small, and medium subsets for iteration.
+- [x] Preserve difficult cases such as merged cells and irregular layouts.
+- [x] Save subset manifests with source IDs and split labels.
 
 ## 4. Construct Table Graphs
 
