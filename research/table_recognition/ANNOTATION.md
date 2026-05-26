@@ -563,7 +563,109 @@ dataset/
 
 ---
 
-# 12. Summary
+# 12. Example
+
+Here is a simple example you can add to the documentation.
+
+## Example Table
+
+Original table:
+
+```markdown
+| Year | Revenue | Profit |
+|---|---:|---:|
+| 2023 | 1000 | 200 |
+| 2024 | 1500 | 300 |
+```
+
+Rendered table:
+
+| Year | Revenue | Profit |
+| ---- | ------: | -----: |
+| 2023 |    1000 |    200 |
+| 2024 |    1500 |    300 |
+
+---
+
+## Annotation Nodes
+
+Each cell is annotated as one node.
+
+| Node ID     | Node Type     |           BBox Example |   Row | Column | Text      |
+| ----------- | ------------- | ---------------------: | ----: | -----: | --------- |
+| `table_001` | `table_root`  |     `[0, 0, 600, 300]` | `0-3` |  `0-3` | `""`      |
+| `cell_001`  | `header_cell` |      `[0, 0, 200, 80]` |   `0` |    `0` | `Year`    |
+| `cell_002`  | `header_cell` |    `[200, 0, 400, 80]` |   `0` |    `1` | `Revenue` |
+| `cell_003`  | `header_cell` |    `[400, 0, 600, 80]` |   `0` |    `2` | `Profit`  |
+| `cell_004`  | `data_cell`   |    `[0, 80, 200, 160]` |   `1` |    `0` | `2023`    |
+| `cell_005`  | `data_cell`   |  `[200, 80, 400, 160]` |   `1` |    `1` | `1000`    |
+| `cell_006`  | `data_cell`   |  `[400, 80, 600, 160]` |   `1` |    `2` | `200`     |
+| `cell_007`  | `data_cell`   |   `[0, 160, 200, 240]` |   `2` |    `0` | `2024`    |
+| `cell_008`  | `data_cell`   | `[200, 160, 400, 240]` |   `2` |    `1` | `1500`    |
+| `cell_009`  | `data_cell`   | `[400, 160, 600, 240]` |   `2` |    `2` | `300`     |
+
+---
+
+## Annotation Relations
+
+| Source      | Relation     | Target     | Meaning                       |
+| ----------- | ------------ | ---------- | ----------------------------- |
+| `table_001` | `contains`   | `cell_001` | Table contains Year header    |
+| `table_001` | `contains`   | `cell_002` | Table contains Revenue header |
+| `table_001` | `contains`   | `cell_003` | Table contains Profit header  |
+| `table_001` | `contains`   | `cell_004` | Table contains data cell      |
+| `cell_001`  | `header_for` | `cell_004` | Year describes 2023           |
+| `cell_001`  | `header_for` | `cell_007` | Year describes 2024           |
+| `cell_002`  | `header_for` | `cell_005` | Revenue describes 1000        |
+| `cell_002`  | `header_for` | `cell_008` | Revenue describes 1500        |
+| `cell_003`  | `header_for` | `cell_006` | Profit describes 200          |
+| `cell_003`  | `header_for` | `cell_009` | Profit describes 300          |
+
+---
+
+## Mermaid Graph
+
+```mermaid
+flowchart TD
+    table_001["table_001<br/>table_root"]
+
+    cell_001["cell_001<br/>header_cell<br/>Year"]
+    cell_002["cell_002<br/>header_cell<br/>Revenue"]
+    cell_003["cell_003<br/>header_cell<br/>Profit"]
+
+    cell_004["cell_004<br/>data_cell<br/>2023"]
+    cell_005["cell_005<br/>data_cell<br/>1000"]
+    cell_006["cell_006<br/>data_cell<br/>200"]
+
+    cell_007["cell_007<br/>data_cell<br/>2024"]
+    cell_008["cell_008<br/>data_cell<br/>1500"]
+    cell_009["cell_009<br/>data_cell<br/>300"]
+
+    table_001 -->|contains| cell_001
+    table_001 -->|contains| cell_002
+    table_001 -->|contains| cell_003
+    table_001 -->|contains| cell_004
+    table_001 -->|contains| cell_005
+    table_001 -->|contains| cell_006
+    table_001 -->|contains| cell_007
+    table_001 -->|contains| cell_008
+    table_001 -->|contains| cell_009
+
+    cell_001 -->|header_for| cell_004
+    cell_001 -->|header_for| cell_007
+
+    cell_002 -->|header_for| cell_005
+    cell_002 -->|header_for| cell_008
+
+    cell_003 -->|header_for| cell_006
+    cell_003 -->|header_for| cell_009
+```
+
+This example shows the basic idea: the table root contains all cells, and header cells point to the data cells they describe.
+
+---
+
+# 13. Summary
 
 The simplified table data format represents each table as a graph with only three relation types:
 
