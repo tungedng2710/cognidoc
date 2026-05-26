@@ -1,94 +1,265 @@
-# Table Recognition Data Specification and Label Studio Annotation Guide
-
-## 1. Goal
-
-This document defines the annotation format for table recognition data. The goal is to represent each table as both:
-
-1. A **hierarchical tree** of table/cell structures.
-2. A **graph** where nodes are table cells or table-level regions, and edges describe structural relations such as `contains`, `equal_to`, `header_for`, or `adjacent_to`.
-
-This format is designed for document parsing, table structure recognition, table cell extraction, and downstream graph-based table reasoning.
+Here is the simplified Markdown version, with fewer graph relation types and all Label Studio-specific parts removed.
 
 ---
 
-## 2. Core Concept
+# Table Recognition Data Specification
 
-A table is represented as a graph of visual regions.
+## 1. Goal
 
-At the table level, the table is modeled as a tree:
+This document defines a simple data format for table recognition.
+
+A table is represented as a **hierarchical graph**. Each table contains cells, and each cell stores three kinds of information:
+
+1. **Visual information**: where the cell appears in the image.
+2. **Logical information**: where the cell belongs in the table grid.
+3. **Content information**: text inside the cell.
+
+The format is designed for table structure recognition, OCR, and downstream table understanding.
+
+---
+
+# 2. Table Representation
+
+A table is represented as a graph.
+
+The graph contains:
+
+* **Nodes**: table, header cells, data cells, merged cells, empty cells.
+* **Edges**: simple relations between nodes.
+
+The main structure is a tree:
 
 ```text
 table_root
-├── header_group / header_cell
-│   ├── sub_header_cell
-│   └── sub_header_cell
+├── header_cell
+├── header_cell
 ├── data_cell
 ├── data_cell
 └── ...
 ```
 
-At the graph level, every annotated object is a node, and relations between nodes are edges:
+For more complex tables, headers may contain sub-headers:
 
 ```text
-table_root --contains--> header_cell
-header_cell --header_for--> data_cell
-cell_A --equal_to--> cell_B
-cell_A --adjacent_right--> cell_B
-cell_A --adjacent_down--> cell_C
+table_root
+├── header_cell: Revenue
+│   ├── header_cell: 2023
+│   └── header_cell: 2024
+├── data_cell
+├── data_cell
+└── ...
 ```
-
-The tree is a constrained subset of the graph: every node except the table root should have exactly one parent through a `contains` edge. Other edges are optional graph relations.
 
 ---
 
-## 3. Data Model
+# 3. Node Types
 
-## 3.1 Table Object
+Each node represents one table region.
 
-Each table should be stored as one JSON object.
+| Node type     | Description                                  |
+| ------------- | -------------------------------------------- |
+| `table_root`  | The whole table                              |
+| `header_cell` | A column header, row header, or group header |
+| `data_cell`   | A normal body cell                           |
+| `merged_cell` | A cell spanning multiple rows or columns     |
+| `empty_cell`  | A visible blank cell                         |
+
+Recommended rule:
+
+Use `header_cell` for any cell that describes other cells. Use `data_cell` for normal values. Use `merged_cell` when a cell spans multiple rows or columns.
+
+---
+
+# 4. Edge Types
+
+Use only a small set of relation types.
+
+| Relation     |  Direction | Description                                      |
+| ------------ | ---------: | ------------------------------------------------ |
+| `contains`   |   Directed | Parent node contains child node                  |
+| `header_for` |   Directed | A header describes a data cell or another header |
+| `same_as`    | Undirected | Two cells are logically equivalent or repeated   |
+
+## 4.1 `contains`
+
+This is the main relation used to build the table tree.
+
+Examples:
+
+```text
+table_root --contains--> header_cell
+table_root --contains--> data_cell
+header_cell --contains--> sub_header_cell
+```
+
+Use `contains` when one node is the parent of another node.
+
+---
+
+## 4.2 `header_for`
+
+This relation connects headers to the cells they describe.
+
+Examples:
+
+```text
+"Year" --header_for--> "2024"
+"Revenue" --header_for--> "$10,000"
+```
+
+Use this relation when the header-cell relationship is clear.
+
+---
+
+## 4.3 `same_as`
+
+This relation is used when two cells have the same logical meaning.
+
+Example:
+
+```text
+cell_A --same_as-- cell_B
+```
+
+This is useful for repeated headers, duplicated labels, or continued tables across pages.
+
+---
+
+# 5. Cell Data Structure
+
+Each cell node has three parts:
+
+```text
+cell
+├── visual
+├── logic
+└── content
+```
+
+---
+
+## 5.1 Visual Part
+
+The visual part stores the bounding box of the cell.
 
 ```json
 {
-  "table_id": "page_001_table_001",
-  "document_id": "doc_001",
-  "page_index": 0,
-  "image": {
-    "path": "images/page_001.png",
-    "width": 2480,
-    "height": 3508
-  },
-  "nodes": [],
-  "edges": [],
-  "metadata": {
-    "annotator": "annotator_01",
-    "created_at": "2026-05-26T00:00:00Z",
-    "schema_version": "1.0"
+  "visual": {
+    "bbox": [120, 240, 520, 310],
+    "bbox_format": "xyxy",
+    "bbox_unit": "pixel",
+    "page_index": 0
+  }
+}
+```
+
+Field meaning:
+
+| Field         | Description                         |
+| ------------- | ----------------------------------- |
+| `bbox`        | Bounding box of the cell            |
+| `bbox_format` | Format of bbox, recommended: `xyxy` |
+| `bbox_unit`   | Unit of bbox, recommended: `pixel`  |
+| `page_index`  | Page number, starting from 0        |
+
+The bbox format is:
+
+```text
+[x_min, y_min, x_max, y_max]
+```
+
+---
+
+## 5.2 Logic Part
+
+The logic part stores the position of the cell in the table grid.
+
+```json
+{
+  "logic": {
+    "row_start": 0,
+    "row_end": 1,
+    "col_start": 0,
+    "col_end": 2,
+    "row_span": 1,
+    "col_span": 2,
+    "logical_role": "column_header"
+  }
+}
+```
+
+Field meaning:
+
+| Field          | Description               |
+| -------------- | ------------------------- |
+| `row_start`    | Start row index           |
+| `row_end`      | End row index             |
+| `col_start`    | Start column index        |
+| `col_end`      | End column index          |
+| `row_span`     | Number of rows covered    |
+| `col_span`     | Number of columns covered |
+| `logical_role` | Role of the cell          |
+
+Use **0-based indexing**.
+
+Use **end-exclusive indexing**:
+
+```text
+row_span = row_end - row_start
+col_span = col_end - col_start
+```
+
+Example:
+
+A merged cell covering columns 0 and 1:
+
+```json
+{
+  "row_start": 0,
+  "row_end": 1,
+  "col_start": 0,
+  "col_end": 2,
+  "row_span": 1,
+  "col_span": 2
+}
+```
+
+---
+
+## 5.3 Content Part
+
+The content part stores the text inside the cell.
+
+```json
+{
+  "content": {
+    "text": "Revenue",
+    "normalized_text": "revenue"
+  }
+}
+```
+
+Field meaning:
+
+| Field             | Description                               |
+| ----------------- | ----------------------------------------- |
+| `text`            | Original text inside the cell             |
+| `normalized_text` | Cleaned or normalized version of the text |
+
+For empty cells:
+
+```json
+{
+  "content": {
+    "text": "",
+    "normalized_text": ""
   }
 }
 ```
 
 ---
 
-## 3.2 Node Definition
-
-A node represents a table region. Usually, a node is one of:
-
-| Node type       | Meaning                                                   |
-| --------------- | --------------------------------------------------------- |
-| `table_root`    | Bounding box of the whole table                           |
-| `header_group`  | A grouped header region containing multiple header cells  |
-| `header_cell`   | A visible header cell                                     |
-| `data_cell`     | A normal body cell                                        |
-| `stub_cell`     | Row-header cell, usually at the left side of a table      |
-| `empty_cell`    | A visible blank cell                                      |
-| `spanning_cell` | A merged cell spanning multiple rows or columns           |
-| `virtual_cell`  | A logical cell that is implied but not visually separated |
-
-Each node has three parts:
-
-1. **Visual part**: bounding box and page location.
-2. **Logic part**: row/column position and structural role.
-3. **Content part**: recognized text or manually corrected text.
+# 6. Full Node Example
 
 ```json
 {
@@ -107,93 +278,26 @@ Each node has three parts:
     "col_end": 2,
     "row_span": 1,
     "col_span": 2,
-    "logical_role": "column_header",
-    "header_level": 1
+    "logical_role": "column_header"
   },
   "content": {
     "text": "Revenue",
-    "normalized_text": "revenue",
-    "tokens": ["Revenue"],
-    "language": "en"
-  },
-  "confidence": {
-    "bbox": 1.0,
-    "structure": 1.0,
-    "text": 0.98
+    "normalized_text": "revenue"
   }
-}
-```
-
-Use **0-based indexing** for rows and columns. Use **end-exclusive intervals**:
-
-```text
-row_start = 0
-row_end = 1
-row_span = row_end - row_start
-```
-
-For a merged cell covering columns 0 and 1:
-
-```json
-{
-  "col_start": 0,
-  "col_end": 2,
-  "col_span": 2
 }
 ```
 
 ---
 
-## 3.3 Edge Definition
-
-An edge represents a relation between two nodes.
+# 7. Full Table Example
 
 ```json
 {
-  "edge_id": "edge_001",
-  "source": "table_root_001",
-  "target": "cell_001",
-  "relation": "contains",
-  "direction": "directed",
-  "metadata": {
-    "confidence": 1.0
-  }
-}
-```
-
-Recommended relation types:
-
-| Relation         |  Direction | Meaning                                                                            |
-| ---------------- | ---------: | ---------------------------------------------------------------------------------- |
-| `contains`       |   Directed | Parent node contains child node                                                    |
-| `header_for`     |   Directed | Header cell describes a data cell or group                                         |
-| `equal_to`       | Undirected | Two cells have the same logical meaning/value                                      |
-| `adjacent_right` |   Directed | Source cell is immediately left of target cell                                     |
-| `adjacent_down`  |   Directed | Source cell is immediately above target cell                                       |
-| `same_row`       | Undirected | Two cells are in the same logical row                                              |
-| `same_column`    | Undirected | Two cells are in the same logical column                                           |
-| `continues_to`   |   Directed | Cell continues across page/table split                                             |
-| `parent_of`      |   Directed | Alternative to `contains`, only if tree relation is semantic rather than geometric |
-
-Recommended rule: use `contains` for the tree structure and use the other relations for additional graph structure.
-
----
-
-## 4. Example Canonical Annotation
-
-```json
-{
-  "table_id": "page_001_table_001",
-  "document_id": "doc_001",
+  "table_id": "table_001",
   "page_index": 0,
-  "image": {
-    "path": "images/page_001.png",
-    "width": 1000,
-    "height": 1400
-  },
   "nodes": [
     {
-      "node_id": "table_001",
+      "node_id": "table_root_001",
       "node_type": "table_root",
       "visual": {
         "bbox": [100, 200, 900, 700],
@@ -203,15 +307,16 @@ Recommended rule: use `contains` for the tree structure and use the other relati
       },
       "logic": {
         "row_start": 0,
-        "row_end": 4,
+        "row_end": 3,
         "col_start": 0,
         "col_end": 3,
-        "row_span": 4,
+        "row_span": 3,
         "col_span": 3,
         "logical_role": "table"
       },
       "content": {
-        "text": ""
+        "text": "",
+        "normalized_text": ""
       }
     },
     {
@@ -230,11 +335,11 @@ Recommended rule: use `contains` for the tree structure and use the other relati
         "col_end": 1,
         "row_span": 1,
         "col_span": 1,
-        "logical_role": "column_header",
-        "header_level": 1
+        "logical_role": "column_header"
       },
       "content": {
-        "text": "Year"
+        "text": "Year",
+        "normalized_text": "year"
       }
     },
     {
@@ -256,31 +361,29 @@ Recommended rule: use `contains` for the tree structure and use the other relati
         "logical_role": "data"
       },
       "content": {
-        "text": "2024"
+        "text": "2024",
+        "normalized_text": "2024"
       }
     }
   ],
   "edges": [
     {
       "edge_id": "edge_001",
-      "source": "table_001",
+      "source": "table_root_001",
       "target": "cell_001",
-      "relation": "contains",
-      "direction": "directed"
+      "relation": "contains"
     },
     {
       "edge_id": "edge_002",
-      "source": "table_001",
+      "source": "table_root_001",
       "target": "cell_002",
-      "relation": "contains",
-      "direction": "directed"
+      "relation": "contains"
     },
     {
       "edge_id": "edge_003",
       "source": "cell_001",
       "target": "cell_002",
-      "relation": "header_for",
-      "direction": "directed"
+      "relation": "header_for"
     }
   ]
 }
@@ -288,133 +391,11 @@ Recommended rule: use `contains` for the tree structure and use the other relati
 
 ---
 
-# 5. Label Studio Annotation Guide
+# 8. Annotation Guide
 
-## 5.1 Recommended Label Studio Task Unit
+## 8.1 Annotate the Table Root
 
-Use one Label Studio task for one of the following:
-
-| Task type                             | Recommended use                                        |
-| ------------------------------------- | ------------------------------------------------------ |
-| Full page image                       | Best when table detection is part of the task          |
-| Cropped table image                   | Best when table structure recognition is the main task |
-| Pre-detected table crop + model boxes | Best for review/correction workflow                    |
-
-For this project, the recommended setup is:
-
-```text
-one task = one page image
-annotate table root + all cells + relations
-```
-
-Label Studio supports image annotation with bounding boxes through `Image` and `RectangleLabels`; its official object detection template uses an `Image` tag and a `RectangleLabels` control tag inside a `View`. ([Label Studio][1])
-
----
-
-## 5.2 Label Studio Labeling Configuration
-
-Use this configuration as a starting point.
-
-```xml
-<View>
-  <Header value="Table Structure Annotation"/>
-
-  <Relations>
-    <Relation value="contains"/>
-    <Relation value="header_for"/>
-    <Relation value="equal_to"/>
-    <Relation value="adjacent_right"/>
-    <Relation value="adjacent_down"/>
-    <Relation value="same_row"/>
-    <Relation value="same_column"/>
-    <Relation value="continues_to"/>
-  </Relations>
-
-  <Image name="image" value="$image"/>
-
-  <RectangleLabels name="node_type" toName="image">
-    <Label value="table_root" background="#D4380D"/>
-    <Label value="header_group" background="#FA8C16"/>
-    <Label value="header_cell" background="#FADB14"/>
-    <Label value="data_cell" background="#52C41A"/>
-    <Label value="stub_cell" background="#13C2C2"/>
-    <Label value="empty_cell" background="#BFBFBF"/>
-    <Label value="spanning_cell" background="#722ED1"/>
-    <Label value="virtual_cell" background="#2F54EB"/>
-  </RectangleLabels>
-
-  <View visibleWhen="region-selected">
-    <Header value="Cell content"/>
-    <TextArea
-      name="cell_text"
-      toName="image"
-      perRegion="true"
-      editable="true"
-      rows="2"
-      maxSubmissions="1"
-      placeholder="Enter cell text. Leave empty for blank cells."
-    />
-
-    <Header value="Logical role"/>
-    <Choices
-      name="logical_role"
-      toName="image"
-      perRegion="true"
-      choice="single-radio"
-      showInline="true"
-    >
-      <Choice value="table"/>
-      <Choice value="column_header"/>
-      <Choice value="row_header"/>
-      <Choice value="data"/>
-      <Choice value="group_header"/>
-      <Choice value="empty"/>
-      <Choice value="unknown"/>
-    </Choices>
-
-    <Header value="Logic metadata JSON"/>
-    <TextArea
-      name="logic_json"
-      toName="image"
-      perRegion="true"
-      editable="true"
-      rows="5"
-      maxSubmissions="1"
-      placeholder='{"row_start":0,"row_end":1,"col_start":0,"col_end":1,"row_span":1,"col_span":1,"header_level":0}'
-    />
-
-    <Header value="Quality"/>
-    <Choices
-      name="quality"
-      toName="image"
-      perRegion="true"
-      choice="single-radio"
-      showInline="true"
-    >
-      <Choice value="clear"/>
-      <Choice value="uncertain_bbox"/>
-      <Choice value="uncertain_text"/>
-      <Choice value="uncertain_structure"/>
-    </Choices>
-  </View>
-</View>
-```
-
-Notes:
-
-Label Studio supports `Relations` for creating labeled relations between regions, which maps naturally to graph edges such as `contains`, `header_for`, and `equal_to`. ([Label Studio][2])
-
-For OCR-style annotation, Label Studio supports per-region text fields using `TextArea perRegion="true"`, and the OCR template uses this pattern to attach transcription text to each drawn region. ([Label Studio][3])
-
-`Choices` also supports `perRegion="true"`, which is useful for attaching a logical role or quality label to each selected bounding box. ([Label Studio][4])
-
----
-
-# 6. Annotation Instructions
-
-## 6.1 Step 1: Draw the Table Root
-
-Draw one bounding box around the whole table.
+First, draw or define the bounding box of the whole table.
 
 Label it as:
 
@@ -422,408 +403,182 @@ Label it as:
 table_root
 ```
 
-The table root should include:
-
-* all header cells
-* all body cells
-* visible table borders
-* captions only if the caption is visually part of the table; otherwise annotate caption separately in another task/schema
-
-For the `logic_json` of the table root:
-
-```json
-{
-  "row_start": 0,
-  "row_end": 5,
-  "col_start": 0,
-  "col_end": 4,
-  "row_span": 5,
-  "col_span": 4,
-  "header_level": null
-}
-```
+The table root should cover the entire table area, including all header cells and data cells.
 
 ---
 
-## 6.2 Step 2: Draw All Visible Cells
+## 8.2 Annotate All Cells
 
-Draw a bounding box for every visible table cell.
+Annotate every visible cell in the table.
 
-Rules:
+Each cell should have:
 
-1. Annotate **merged cells as one box**, not multiple boxes.
-2. Annotate **blank cells** if the cell exists visually.
-3. If a cell has no visible border but is logically clear, annotate it as a normal cell.
-4. If a logical cell is implied but not visually separable, annotate it as `virtual_cell`.
-5. Do not overlap cells unless one cell is a parent/group cell containing child cells.
+* one bounding box
+* one node type
+* one logical position
+* one text content value
 
-Recommended labels:
+Recommended node types:
 
 ```text
 header_cell
 data_cell
-stub_cell
+merged_cell
 empty_cell
-spanning_cell
 ```
 
 ---
 
-## 6.3 Step 3: Add Cell Text
+## 8.3 Annotate Merged Cells
 
-For every cell, fill `cell_text`.
+A merged cell should be annotated as one node.
 
-Examples:
-
-```text
-Revenue
-```
+Example:
 
 ```text
-2024
+A header cell spans 3 columns
 ```
 
-```text
-Total assets
-```
-
-For blank cells, leave the text empty:
-
-```text
-```
-
-Do not include unnecessary line breaks unless the cell content is truly multi-line.
-
----
-
-## 6.4 Step 4: Add Logic Metadata
-
-For every cell, fill `logic_json`.
-
-Example for a normal cell:
-
-```json
-{
-  "row_start": 2,
-  "row_end": 3,
-  "col_start": 1,
-  "col_end": 2,
-  "row_span": 1,
-  "col_span": 1,
-  "header_level": 0
-}
-```
-
-Example for a merged column header:
+Its logic should be:
 
 ```json
 {
   "row_start": 0,
   "row_end": 1,
-  "col_start": 1,
-  "col_end": 4,
+  "col_start": 0,
+  "col_end": 3,
   "row_span": 1,
-  "col_span": 3,
-  "header_level": 1
+  "col_span": 3
 }
 ```
 
-Example for a row header:
+Do not split a merged cell into multiple small cells.
+
+---
+
+## 8.4 Annotate Empty Cells
+
+If a blank cell is part of the table structure, annotate it.
+
+Use:
+
+```text
+empty_cell
+```
+
+Its content should be:
 
 ```json
 {
-  "row_start": 3,
-  "row_end": 4,
-  "col_start": 0,
-  "col_end": 1,
-  "row_span": 1,
-  "col_span": 1,
-  "header_level": 1
+  "text": "",
+  "normalized_text": ""
 }
 ```
 
 ---
 
-## 6.5 Step 5: Add Relations
+## 8.5 Annotate Header Relations
 
-After drawing all nodes, create relations between regions.
-
-Label Studio lets annotators create relations between two annotation regions and then assign a predefined relation label to the relation. ([Label Studio][5])
-
-Use the following direction rules:
-
-## `contains`
-
-Use from parent to child.
-
-```text
-table_root -> cell
-header_group -> header_cell
-```
-
-Example:
-
-```text
-table_001 --contains--> cell_001
-```
-
-## `header_for`
-
-Use from header cell to the data cell it describes.
-
-```text
-header_cell -> data_cell
-```
+Use `header_for` to connect a header cell to the cells it describes.
 
 Example:
 
 ```text
 "Year" --header_for--> "2024"
+"Revenue" --header_for--> "$10,000"
 ```
 
-## `equal_to`
+For simple tables, each column header should connect to the data cells under it.
 
-Use when two cells are logically equivalent.
+For row headers, each row header should connect to the data cells on the same row.
+
+---
+
+## 8.6 Annotate Containment Relations
+
+Every non-root node should be connected to a parent node by `contains`.
+
+Minimum structure:
 
 ```text
-cell_A --equal_to-- cell_B
+table_root --contains--> cell
 ```
 
-This relation is logically undirected. In Label Studio, draw it in either direction, then normalize it during post-processing.
-
-## `adjacent_right`
-
-Use from left cell to right cell.
+For hierarchical headers:
 
 ```text
-cell_A -> cell_B
-```
-
-## `adjacent_down`
-
-Use from upper cell to lower cell.
-
-```text
-cell_A -> cell_C
-```
-
-## `continues_to`
-
-Use when a table or cell continues across pages.
-
-```text
-cell_page_1 -> cell_page_2
+table_root --contains--> header_cell
+header_cell --contains--> sub_header_cell
 ```
 
 ---
 
-# 7. Label Studio Export Mapping
+# 9. Annotation Rules
 
-Label Studio exports annotations in JSON. Image annotation bounding boxes are exported as percentages of the image size, not raw pixels. ([Label Studio][6])
+Follow these rules when creating annotations:
 
-A Label Studio rectangle result usually contains values like:
-
-```json
-{
-  "id": "abc123",
-  "from_name": "node_type",
-  "to_name": "image",
-  "type": "rectanglelabels",
-  "value": {
-    "x": 10.0,
-    "y": 20.0,
-    "width": 30.0,
-    "height": 5.0,
-    "rotation": 0,
-    "rectanglelabels": ["header_cell"]
-  }
-}
-```
-
-Convert percentage coordinates to pixel coordinates:
-
-```python
-x0 = value["x"] / 100 * image_width
-y0 = value["y"] / 100 * image_height
-x1 = (value["x"] + value["width"]) / 100 * image_width
-y1 = (value["y"] + value["height"]) / 100 * image_height
-```
-
-Target canonical format:
-
-```json
-"visual": {
-  "bbox": [x0, y0, x1, y1],
-  "bbox_format": "xyxy",
-  "bbox_unit": "pixel"
-}
-```
-
-Label Studio stores each annotation as results, and results for the same region share the same `id`, which is useful for combining the box, text, choices, and metadata into one canonical node. ([Human Signal][7])
+1. Use one `table_root` for each table.
+2. Use one node for each visible cell.
+3. Use one node for each merged cell.
+4. Do not split merged cells into smaller cells.
+5. Use 0-based row and column indices.
+6. Use end-exclusive `row_end` and `col_end`.
+7. Use `contains` to build the hierarchy.
+8. Use `header_for` only when the header relationship is clear.
+9. Use `same_as` only for repeated or equivalent cells.
+10. Keep original cell text in `content.text`.
+11. Store cleaned text in `content.normalized_text`.
 
 ---
 
-# 8. Import Format for Label Studio
+# 10. Quality Checklist
 
-For manual annotation, each task can be imported like this:
+Before finalizing an annotation, check:
 
-```json
-[
-  {
-    "data": {
-      "image": "https://example.com/images/page_001.png",
-      "document_id": "doc_001",
-      "page_index": 0
-    }
-  }
-]
-```
-
-For model-assisted annotation, use pre-annotations with the `predictions` key. Label Studio expects pre-annotation tasks to contain a `data` object and a `predictions` array, and the prediction result format must match the labeling configuration. ([Label Studio][8])
-
-Example:
-
-```json
-[
-  {
-    "data": {
-      "image": "https://example.com/images/page_001.png",
-      "document_id": "doc_001",
-      "page_index": 0
-    },
-    "predictions": [
-      {
-        "model_version": "table-detector-v1",
-        "result": [
-          {
-            "id": "cell_001",
-            "from_name": "node_type",
-            "to_name": "image",
-            "type": "rectanglelabels",
-            "value": {
-              "x": 10.0,
-              "y": 20.0,
-              "width": 20.0,
-              "height": 5.0,
-              "rotation": 0,
-              "rectanglelabels": ["header_cell"]
-            }
-          },
-          {
-            "id": "cell_001",
-            "from_name": "cell_text",
-            "to_name": "image",
-            "type": "textarea",
-            "value": {
-              "text": ["Revenue"]
-            }
-          }
-        ]
-      }
-    ]
-  }
-]
-```
+* [ ] The table has one `table_root`.
+* [ ] All visible cells are annotated.
+* [ ] Merged cells have correct `row_span` and `col_span`.
+* [ ] Empty cells are annotated if they belong to the table grid.
+* [ ] All cells have bounding boxes.
+* [ ] All cells have logical row and column positions.
+* [ ] All cells have content text, even if empty.
+* [ ] All non-root nodes have a `contains` relation.
+* [ ] Header cells have `header_for` relations when needed.
+* [ ] The final graph has no cycles in `contains` edges.
 
 ---
 
-# 9. Annotation Quality Checklist
-
-Before submitting a task, check:
-
-* [ ] The whole table has exactly one `table_root`.
-* [ ] Every visible cell has one bounding box.
-* [ ] Merged cells are annotated as one cell with correct `row_span` and `col_span`.
-* [ ] Empty cells are annotated if they are part of the table grid.
-* [ ] Every cell has valid `logic_json`.
-* [ ] Row and column indices are 0-based.
-* [ ] `row_end` and `col_end` are end-exclusive.
-* [ ] Every cell has a `contains` relation from the table root or from a parent group.
-* [ ] Header cells use `header_for` relations when the relationship is clear.
-* [ ] Ambiguous cells are marked with `quality = uncertain_*`.
-* [ ] Text is copied exactly as shown unless normalization is handled separately.
-
----
-
-# 10. Recommended Post-processing
-
-After exporting Label Studio annotations:
-
-1. Group all results by Label Studio region `id`.
-2. Convert rectangle percentage coordinates to pixel coordinates.
-3. Parse `cell_text`.
-4. Parse `logic_json`.
-5. Parse `logical_role`.
-6. Convert Label Studio relations into canonical graph edges.
-7. Validate tree constraints:
-
-   * one `table_root`
-   * every non-root node has one `contains` parent
-   * no cycles in `contains` edges
-8. Validate table grid constraints:
-
-   * no unintended overlap between cells
-   * correct row/column spans
-   * all required row/column positions are covered
-9. Export final canonical JSON.
-
----
-
-# 11. Recommended File Structure
+# 11. Recommended Dataset Structure
 
 ```text
 dataset/
 ├── images/
-│   ├── doc_001_page_001.png
-│   └── doc_001_page_002.png
-├── label_studio/
-│   ├── tasks.json
-│   └── exported_annotations.json
-├── canonical/
-│   ├── doc_001_page_001_table_001.json
-│   └── doc_001_page_002_table_001.json
+│   ├── page_001.png
+│   └── page_002.png
+├── annotations/
+│   ├── page_001_table_001.json
+│   └── page_002_table_001.json
 └── README.md
 ```
 
 ---
 
-# 12. Versioning
+# 12. Summary
 
-Use a schema version in every exported canonical file:
+The simplified table data format represents each table as a graph with only three relation types:
 
-```json
-{
-  "schema_version": "1.0"
-}
+```text
+contains
+header_for
+same_as
 ```
 
-Recommended version policy:
+Each cell is represented as a node with:
 
-| Version | Meaning                                |
-| ------- | -------------------------------------- |
-| `1.0`   | Initial table tree/graph schema        |
-| `1.1`   | Add new relation types                 |
-| `1.2`   | Add confidence fields or OCR metadata  |
-| `2.0`   | Breaking change in node/edge structure |
+```text
+visual part  = bbox coordinates
+logic part   = row/column position and span
+content part = text inside the cell
+```
 
----
-
-# 13. Summary
-
-This annotation format treats a table as a structured visual graph:
-
-* The **table root** defines the full table boundary.
-* Each **cell** is a node with visual, logical, and content information.
-* The **tree structure** is represented by `contains` edges.
-* Additional table semantics are represented by graph edges such as `header_for`, `equal_to`, `adjacent_right`, and `adjacent_down`.
-* Label Studio is used to annotate bounding boxes, per-region text, per-region metadata, and relations.
-* A post-processing step converts Label Studio JSON into the final canonical table graph JSON.
-
-[1]: https://labelstud.io/templates/image_bbox "Label Studio — Image Object Detection Data Labeling Template"
-[2]: https://labelstud.io/tags/relations "Label Studio — Relations Tag for Multiple Relations"
-[3]: https://labelstud.io/templates/optical_character_recognition "Label Studio — Optical Character Recognition (OCR) Data Labeling Template"
-[4]: https://labelstud.io/tags/choices "Label Studio — Choices Tag for Multiple Choice Labels"
-[5]: https://labelstud.io/guide/labeling/ "Label Studio Documentation — Label and annotate data"
-[6]: https://labelstud.io/guide/export "Label Studio Documentation — Export Annotations"
-[7]: https://docs.humansignal.com/guide/task_format "Label Studio Enterprise Documentation — Label Studio Task Format"
-[8]: https://labelstud.io/guide/predictions "Label Studio Documentation — Import pre-annotated data into Label Studio"
+This keeps the annotation format simple while still supporting hierarchical table structure, merged cells, headers, and logical table understanding.
