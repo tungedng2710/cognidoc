@@ -177,6 +177,44 @@ Common relations:
 | `cell_002` | `header_for` | `cell_005`, `cell_008` | Revenue describes revenue values. |
 | `cell_003` | `header_for` | `cell_006`, `cell_009` | Profit describes profit values. |
 
+Mermaid graph:
+
+```mermaid
+flowchart TD
+    table_001["table_001<br/>table_root"]
+
+    cell_001["cell_001<br/>header_cell<br/>Year"]
+    cell_002["cell_002<br/>header_cell<br/>Revenue"]
+    cell_003["cell_003<br/>header_cell<br/>Profit"]
+
+    cell_004["cell_004<br/>data_cell<br/>2023"]
+    cell_005["cell_005<br/>data_cell<br/>1000"]
+    cell_006["cell_006<br/>data_cell<br/>200"]
+
+    cell_007["cell_007<br/>data_cell<br/>2024"]
+    cell_008["cell_008<br/>data_cell<br/>1500"]
+    cell_009["cell_009<br/>data_cell<br/>300"]
+
+    table_001 -->|contains| cell_001
+    table_001 -->|contains| cell_002
+    table_001 -->|contains| cell_003
+    table_001 -->|contains| cell_004
+    table_001 -->|contains| cell_005
+    table_001 -->|contains| cell_006
+    table_001 -->|contains| cell_007
+    table_001 -->|contains| cell_008
+    table_001 -->|contains| cell_009
+
+    cell_001 -->|header_for| cell_004
+    cell_001 -->|header_for| cell_007
+
+    cell_002 -->|header_for| cell_005
+    cell_002 -->|header_for| cell_008
+
+    cell_003 -->|header_for| cell_006
+    cell_003 -->|header_for| cell_009
+```
+
 Compact JSON shape:
 
 ```json
