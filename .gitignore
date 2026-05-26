@@ -225,5 +225,6 @@ research/VLM/*
 !research/VLM/finetune.py
 !research/VLM/predict.py
 !research/VLM/demo_hf.py
+!research/table_recognition
 # !research/VLM/convert_to_ollama.py
 unsloth*
