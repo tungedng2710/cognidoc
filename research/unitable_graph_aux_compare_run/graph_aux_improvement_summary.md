@@ -68,6 +68,35 @@ Best validation epochs:
 | `structure_relation_recall` | 0.8236 | 0.8236 | +0.0000 | 0.00% |
 | `structure_relation_f1` | 0.9033 | 0.9033 | +0.0000 | 0.00% |
 
+## `token_acc` vs `cell_token_acc`
+
+`token_acc` measures accuracy over the full decoded output sequence. In a table-generation model, this usually includes structural HTML/table tokens, cell-related tokens, and any non-padding special tokens included by the training mask. It is the broadest token-level metric for the generated sequence.
+
+`cell_token_acc` measures accuracy only over tokens associated with table cells or cell contents. It is narrower than `token_acc` and is more sensitive to whether the model predicts cell-level values at the correct positions.
+
+| Metric | Scope | What It Indicates |
+|---|---|---|
+| `token_acc` | All decoded tokens | Overall sequence quality, including structure and cell tokens |
+| `cell_token_acc` | Cell/value tokens only | Accuracy on cell-specific content or cell-token positions |
+
+This difference matters for interpreting the result. Graph auxiliary supervision uses structural relations:
+
+- `same_row`
+- `same_column`
+- `right_neighbor`
+- `down_neighbor`
+
+These relations directly supervise table layout and adjacency, not cell content. Therefore, graph auxiliary training can improve the overall sequence or structural-token behavior while not improving, or even slightly hurting, peak cell-token accuracy.
+
+The likely reasons the best `cell_token_acc` is worse for `graph_aux` are:
+
+- The auxiliary graph losses compete with the cell-token objective for model capacity and gradient budget.
+- The graph losses emphasize structure, so the model may allocate more capacity to relation-aware representations than cell-content prediction.
+- Sequence metrics are alignment-sensitive: if structural token choices shift where cell tokens appear, cell tokens can be counted wrong even when many local predictions are reasonable.
+- The best validation epochs differ. Baseline reaches its best `cell_token_acc` at epoch 48, while `graph_aux` reaches its best at epoch 24. At the final epoch, `graph_aux` is slightly better on `cell_token_acc` than baseline.
+
+In this run, the graph auxiliary branch appears to regularize the full sequence objective more than the cell-token objective. That matches the observed pattern: final `token_acc` and `html_loss` improve, while best `cell_token_acc` is worse.
+
 ## Auxiliary Relation Head
 
 The auxiliary relation branch learned meaningful relation predictions.
