@@ -229,5 +229,7 @@ research/VLM/*
 research/table_recognition/**
 !research/table_recognition/**/
 !research/table_recognition/**/*.md
+!research/table_recognition/baselines/table-transformer/**
 # !research/VLM/convert_to_ollama.py
 unsloth*
+*.pth
