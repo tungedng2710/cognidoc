@@ -233,3 +233,8 @@ research/table_recognition/**
 # !research/VLM/convert_to_ollama.py
 unsloth*
 *.pth
+*.png
+*.jpg
+*.jpeg
+*.json
+*.sh
