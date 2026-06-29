@@ -234,6 +234,19 @@ python finetune.py \
   --eval-steps 8
 ```
 
+For the H200 140GB machine, use the launcher script:
+
+```bash
+./finetune_pubtabnet_h200.sh
+```
+
+Override defaults from the shell when needed:
+
+```bash
+PER_DEVICE_TRAIN_BATCH_SIZE=12 GRADIENT_ACCUMULATION_STEPS=1 ./finetune_pubtabnet_h200.sh
+RESUME_FROM_CHECKPOINT=qwen35_08b_pubtabnet_html_lora/checkpoint-1000 ./finetune_pubtabnet_h200.sh
+```
+
 ## Resume From A Checkpoint
 
 Pass the checkpoint folder as an argument:
