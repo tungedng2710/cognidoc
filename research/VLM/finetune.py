@@ -1,8 +1,8 @@
 # ============================================================
-# Fine-tune Qwen3.5-0.8B for OCR with Unsloth
+# Fine-tune Qwen3.5-0.8B for image-to-HTML table generation with Unsloth
 # Dataset format:
-#   train split: columns ["image", "text"]
-#   test split:  columns ["image", "text"]
+#   train split:      columns include ["image", "html_table"] or ["image", "html"]
+#   validation split: columns include ["image", "html_table"] or ["image", "html"]
 # ============================================================
 
 # Install first, if needed:
@@ -16,21 +16,24 @@ from pathlib import Path
 # -----------------------------
 # Config
 # -----------------------------
-DEFAULT_DATASET_ID = "5CD-AI/Viet-Handwriting-OCR-v2"
+DEFAULT_DATASET_ID = "apoidea/pubtabnet-html"
 DEFAULT_MODEL_NAME = "unsloth/Qwen3.5-0.8B"  # or "Qwen/Qwen3.5-0.8B"
-DEFAULT_OUTPUT_DIR = "qwen35_08b_ocr_lora"
-DEFAULT_MAX_SEQ_LENGTH = 2048
+DEFAULT_OUTPUT_DIR = "qwen35_08b_pubtabnet_html_lora"
+DEFAULT_MAX_SEQ_LENGTH = 4096
 
-OCR_PROMPT = (
-    "Read the text in this image. "
-    "Return exactly the visible text, preserving line breaks when possible. "
-    "Do not add explanations."
+HTML_TABLE_PROMPT = (
+    "Convert the table in this image into HTML. "
+    "Return only the HTML table markup. "
+    "Do not add explanations, markdown fences, or extra text."
 )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Fine-tune Qwen3.5-0.8B for OCR with optional checkpoint resume.",
+        description=(
+            "Fine-tune Qwen3.5-0.8B for table image to HTML generation "
+            "with optional checkpoint resume."
+        ),
     )
 
     data_group = parser.add_argument_group("data and model")
@@ -38,6 +41,11 @@ def parse_args():
     data_group.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     data_group.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     data_group.add_argument("--max-seq-length", type=int, default=DEFAULT_MAX_SEQ_LENGTH)
+    data_group.add_argument("--answer-column", default=None)
+    data_group.add_argument("--train-split", default="train")
+    data_group.add_argument("--eval-split", default=None)
+    data_group.add_argument("--max-train-samples", type=int, default=None)
+    data_group.add_argument("--max-eval-samples", type=int, default=None)
 
     train_group = parser.add_argument_group("training")
     train_group.add_argument("--num-train-epochs", type=float, default=3)
@@ -67,7 +75,7 @@ def parse_args():
         default=None,
         help=(
             "Optional checkpoint folder to resume from, e.g. "
-            "qwen35_08b_ocr_lora/checkpoint-1700."
+            "qwen35_08b_pubtabnet_html_lora/checkpoint-1700."
         ),
     )
     resume_group.add_argument(
@@ -113,12 +121,20 @@ dataset = load_dataset(args.dataset_id)
 # Ensure the image column is decoded as PIL images
 dataset = dataset.cast_column("image", Image())
 
-train_raw = dataset["train"]
-test_raw = dataset["test"]
+train_raw = dataset[args.train_split]
+eval_split = args.eval_split
+if eval_split is None:
+    eval_split = "validation" if "validation" in dataset else "test"
+test_raw = dataset[eval_split]
+
+if args.max_train_samples is not None:
+    train_raw = train_raw.select(range(min(args.max_train_samples, len(train_raw))))
+if args.max_eval_samples is not None:
+    test_raw = test_raw.select(range(min(args.max_eval_samples, len(test_raw))))
 
 
 # -----------------------------
-# Convert image/text rows to VLM chat format
+# Convert image/table-HTML rows to VLM chat format
 # -----------------------------
 def to_rgb(image):
     if isinstance(image, str):
@@ -128,16 +144,34 @@ def to_rgb(image):
     return image
 
 
+def get_answer(sample):
+    candidate_columns = [args.answer_column] if args.answer_column else []
+    candidate_columns.extend(["html_table", "html", "text", "label"])
+
+    for column in candidate_columns:
+        if column and column in sample and sample[column] is not None:
+            answer = sample[column]
+            if not isinstance(answer, str):
+                answer = str(answer)
+            answer = answer.strip()
+            if answer:
+                return answer
+
+    raise ValueError(
+        "Could not find a non-empty HTML answer. Pass --answer-column for this dataset."
+    )
+
+
 def convert_to_conversation(sample):
     image = to_rgb(sample["image"])
-    answer = str(sample["text"]).strip()
+    answer = get_answer(sample)
 
     return {
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": OCR_PROMPT},
+                    {"type": "text", "text": HTML_TABLE_PROMPT},
                     {"type": "image", "image": image},
                 ],
             },
@@ -216,7 +250,7 @@ trainer = SFTTrainer(
         model,
         tokenizer,
 
-        # Optional but useful: only compute loss on assistant OCR answer.
+        # Optional but useful: only compute loss on assistant HTML answer.
         # If your chat template causes matching errors, set this to False.
         train_on_responses_only=True,
         instruction_part="<|im_start|>user\n",
@@ -284,5 +318,5 @@ tokenizer.save_pretrained(args.output_dir)
 # )
 
 # Optional: push LoRA to Hugging Face
-# model.push_to_hub("your_username/qwen35-08b-ocr-lora", token="hf_xxx")
-# tokenizer.push_to_hub("your_username/qwen35-08b-ocr-lora", token="hf_xxx")
+# model.push_to_hub("your_username/qwen35-08b-pubtabnet-html-lora", token="hf_xxx")
+# tokenizer.push_to_hub("your_username/qwen35-08b-pubtabnet-html-lora", token="hf_xxx")
