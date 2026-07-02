@@ -1,8 +1,8 @@
 # ============================================================
-# Fine-tune Qwen3.5-0.8B for image-to-HTML table generation with Unsloth
+# Fine-tune Qwen3.5-0.8B for multi-image table-to-HTML generation with Unsloth
 # Dataset format:
-#   train split:      columns include ["image", "html_table"] or ["image", "html"]
-#   validation split: columns include ["image", "html_table"] or ["image", "html"]
+#   train split: columns include ["images", "table_html"]
+#   images is a list of table page images; table_html is the parsed HTML output
 # ============================================================
 
 # Install first, if needed:
@@ -10,20 +10,22 @@
 # pip install -U datasets trl accelerate pillow torchvision
 
 import argparse
+import json
 from pathlib import Path
 
 
 # -----------------------------
 # Config
 # -----------------------------
-DEFAULT_DATASET_ID = "apoidea/pubtabnet-html"
+DEFAULT_DATASET_ID = "tungedng2710/table_html"
 DEFAULT_MODEL_NAME = "unsloth/Qwen3.5-0.8B"  # or "Qwen/Qwen3.5-0.8B"
-DEFAULT_OUTPUT_DIR = "qwen35_08b_pubtabnet_html_lora"
+DEFAULT_OUTPUT_DIR = "qwen35_08b_table_html_datav2_lora"
 DEFAULT_MAX_SEQ_LENGTH = 4096
 
 HTML_TABLE_PROMPT = (
-    "Convert the table in this image into HTML. "
-    "Return only the HTML table markup. "
+    "Convert the table shown in the provided image or images into parsed HTML. "
+    "If there are multiple images, they are consecutive parts of the same table. "
+    "Return only the HTML table markup for the complete table. "
     "Do not add explanations, markdown fences, or extra text."
 )
 
@@ -38,12 +40,15 @@ def parse_args():
 
     data_group = parser.add_argument_group("data and model")
     data_group.add_argument("--dataset-id", default=DEFAULT_DATASET_ID)
+    data_group.add_argument("--dataset-dir", type=Path, default=None)
     data_group.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     data_group.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     data_group.add_argument("--max-seq-length", type=int, default=DEFAULT_MAX_SEQ_LENGTH)
     data_group.add_argument("--answer-column", default=None)
+    data_group.add_argument("--image-column", default="images")
     data_group.add_argument("--train-split", default="train")
     data_group.add_argument("--eval-split", default=None)
+    data_group.add_argument("--eval-size", type=float, default=0.1)
     data_group.add_argument("--max-train-samples", type=int, default=None)
     data_group.add_argument("--max-eval-samples", type=int, default=None)
 
@@ -105,7 +110,7 @@ RESUME_FROM_CHECKPOINT = get_resume_checkpoint(args)
 
 
 import torch
-from datasets import load_dataset, Image
+from datasets import Dataset, DatasetDict, Features, Image, Sequence, Value, load_dataset
 from PIL import Image as PILImage
 
 from unsloth import FastVisionModel, is_bfloat16_supported
@@ -113,19 +118,43 @@ from unsloth.trainer import UnslothVisionDataCollator
 from trl import SFTTrainer, SFTConfig
 
 
+def load_local_table_dataset(dataset_dir: Path) -> DatasetDict:
+    metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    rows = []
+    for item in metadata:
+        rows.append({
+            "id": item["id"],
+            "images": [str(dataset_dir / path) for path in item["images"]],
+            "table_html": (dataset_dir / item["table_html"]).read_text(encoding="utf-8"),
+            "num_images": item["num_images"],
+        })
+    features = Features({
+        "id": Value("string"),
+        "images": Sequence(Image()),
+        "table_html": Value("string"),
+        "num_images": Value("int32"),
+    })
+    return DatasetDict({"train": Dataset.from_list(rows, features=features)})
+
+
 # -----------------------------
 # Load dataset
 # -----------------------------
-dataset = load_dataset(args.dataset_id)
-
-# Ensure the image column is decoded as PIL images
-dataset = dataset.cast_column("image", Image())
+dataset = load_local_table_dataset(args.dataset_dir) if args.dataset_dir else load_dataset(args.dataset_id)
 
 train_raw = dataset[args.train_split]
 eval_split = args.eval_split
+if eval_split is None and "validation" in dataset:
+    eval_split = "validation"
+elif eval_split is None and "test" in dataset:
+    eval_split = "test"
+
 if eval_split is None:
-    eval_split = "validation" if "validation" in dataset else "test"
-test_raw = dataset[eval_split]
+    split = train_raw.train_test_split(test_size=args.eval_size, seed=args.seed)
+    train_raw = split["train"]
+    test_raw = split["test"]
+else:
+    test_raw = dataset[eval_split]
 
 if args.max_train_samples is not None:
     train_raw = train_raw.select(range(min(args.max_train_samples, len(train_raw))))
@@ -139,6 +168,13 @@ if args.max_eval_samples is not None:
 def to_rgb(image):
     if isinstance(image, str):
         return PILImage.open(image).convert("RGB")
+    if isinstance(image, dict):
+        image = image.get("image") or image.get("path") or image.get("bytes")
+        if isinstance(image, bytes):
+            from io import BytesIO
+
+            return PILImage.open(BytesIO(image)).convert("RGB")
+        return to_rgb(image)
     if image.mode != "RGB":
         return image.convert("RGB")
     return image
@@ -146,7 +182,7 @@ def to_rgb(image):
 
 def get_answer(sample):
     candidate_columns = [args.answer_column] if args.answer_column else []
-    candidate_columns.extend(["html_table", "html", "text", "label"])
+    candidate_columns.extend(["table_html", "html_table", "html", "text", "label"])
 
     for column in candidate_columns:
         if column and column in sample and sample[column] is not None:
@@ -163,17 +199,19 @@ def get_answer(sample):
 
 
 def convert_to_conversation(sample):
-    image = to_rgb(sample["image"])
+    images = sample[args.image_column]
+    if not isinstance(images, list):
+        images = [images]
+    images = [to_rgb(image) for image in images]
     answer = get_answer(sample)
+    user_content = [{"type": "text", "text": HTML_TABLE_PROMPT}]
+    user_content.extend({"type": "image", "image": image} for image in images)
 
     return {
         "messages": [
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": HTML_TABLE_PROMPT},
-                    {"type": "image", "image": image},
-                ],
+                "content": user_content,
             },
             {
                 "role": "assistant",

@@ -1,19 +1,70 @@
 import argparse
 import json
+import tempfile
 from pathlib import Path
 
 from datasets import Dataset, Features, Image, Sequence, Value
-from huggingface_hub import login
+from huggingface_hub import HfApi, login
 from tqdm import tqdm
 
 
-def build_dataset(dataset_dir: Path) -> Dataset:
+def dataset_card(num_examples: int | None = None, data_pattern: str = "data/train-*") -> str:
+    split_info = ""
+    if num_examples is not None:
+        split_info = f"""  splits:
+  - name: train
+    num_examples: {num_examples}
+"""
+    return f"""---
+license: mit
+configs:
+- config_name: default
+  data_files:
+  - split: train
+    path: {data_pattern}
+dataset_info:
+  features:
+  - name: id
+    dtype: string
+  - name: images
+    list: image
+  - name: table_html
+    dtype: string
+  - name: num_images
+    dtype: int32
+{split_info}---
+
+# Table HTML Dataset
+
+Rows contain a list of table-page images in `images` and the corresponding table HTML in `table_html`.
+"""
+
+
+def upload_dataset_card(repo_id: str, num_examples: int | None = None, data_pattern: str = "data/train-*") -> None:
+    api = HfApi()
+    with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8") as card_file:
+        card_file.write(dataset_card(num_examples, data_pattern=data_pattern))
+        card_file.flush()
+        api.upload_file(
+            path_or_fileobj=card_file.name,
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="dataset",
+        )
+
+
+def build_dataset(dataset_dir: Path, limit: int | None = None) -> Dataset:
     metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    if limit is not None:
+        metadata = metadata[:limit]
     rows = []
     for item in tqdm(metadata, desc="Preparing HF rows"):
         rows.append({
             "id": item["id"],
-            "images": [str(dataset_dir / path) for path in item["images"]],
+            "images": [
+                {"bytes": (dataset_dir / path).read_bytes(), "path": path}
+                for path in item["images"]
+            ],
             "table_html": (dataset_dir / item["table_html"]).read_text(encoding="utf-8"),
             "num_images": item["num_images"],
         })
@@ -32,12 +83,30 @@ def main() -> None:
     parser.add_argument("--repo-id", default="tungedng2710/table_html")
     parser.add_argument("--token", default=None, help="HF token; optional if already logged in")
     parser.add_argument("--private", action="store_true")
+    parser.add_argument("--limit", type=int, default=None, help="Upload only the first N rows")
+    parser.add_argument("--fix-card-only", action="store_true", help="Only upload corrected dataset card")
+    parser.add_argument("--data-pattern", default="data/train-*-of-*.parquet")
+    parser.add_argument(
+        "--max-shard-size",
+        default="2048MB",
+        help="Smaller shards avoid nested image embedding issues on large datasets.",
+    )
     args = parser.parse_args()
 
     if args.token:
         login(token=args.token)
-    dataset = build_dataset(args.dataset_dir)
-    dataset.push_to_hub(args.repo_id, private=args.private)
+    if args.fix_card_only:
+        metadata = json.loads((args.dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+        upload_dataset_card(args.repo_id, len(metadata) if args.limit is None else args.limit, args.data_pattern)
+        return
+
+    metadata = json.loads((args.dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    upload_dataset_card(args.repo_id, len(metadata) if args.limit is None else args.limit, args.data_pattern)
+    dataset = build_dataset(args.dataset_dir, limit=args.limit)
+    try:
+        dataset.push_to_hub(args.repo_id, private=args.private, max_shard_size=args.max_shard_size)
+    finally:
+        upload_dataset_card(args.repo_id, len(dataset), args.data_pattern)
 
 
 if __name__ == "__main__":
