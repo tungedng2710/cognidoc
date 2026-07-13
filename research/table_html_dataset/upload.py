@@ -30,13 +30,15 @@ dataset_info:
     list: image
   - name: table_html
     dtype: string
+  - name: has_reasoning
+    dtype: bool
   - name: num_images
     dtype: int32
 {split_info}---
 
 # Table HTML Dataset
 
-Rows contain a list of table-page images in `images` and the corresponding table HTML in `table_html`.
+Rows contain a list of table-page images in `images` and the corresponding table HTML in `table_html`. If `has_reasoning` is true, `table_html` contains a visible `<think>...</think>` reasoning trace followed by the final structural `<table>...</table>` label.
 """
 
 
@@ -58,20 +60,26 @@ def build_dataset(dataset_dir: Path, limit: int | None = None) -> Dataset:
     if limit is not None:
         metadata = metadata[:limit]
     rows = []
+    reasoning_dir = dataset_dir / "table_html_reasoning"
     for item in tqdm(metadata, desc="Preparing HF rows"):
+        html_path = dataset_dir / item["table_html"]
+        reasoning_path = reasoning_dir / Path(item["table_html"]).name
+        has_reasoning = reasoning_path.exists()
         rows.append({
             "id": item["id"],
             "images": [
                 {"bytes": (dataset_dir / path).read_bytes(), "path": path}
                 for path in item["images"]
             ],
-            "table_html": (dataset_dir / item["table_html"]).read_text(encoding="utf-8"),
+            "table_html": (reasoning_path if has_reasoning else html_path).read_text(encoding="utf-8"),
+            "has_reasoning": has_reasoning,
             "num_images": item["num_images"],
         })
     features = Features({
         "id": Value("string"),
         "images": Sequence(Image()),
         "table_html": Value("string"),
+        "has_reasoning": Value("bool"),
         "num_images": Value("int32"),
     })
     return Dataset.from_list(rows, features=features)
