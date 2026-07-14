@@ -10,7 +10,7 @@ DEFAULT_MODEL_NAME = "unsloth/Qwen3.5-4B"
 DEFAULT_OUTPUT_DIR = "qwen35_4b_table_html_reasoning_lora"
 # The longest current target is about 17.7k tokens before vision/chat tokens.
 DEFAULT_MAX_SEQ_LENGTH = 20_480
-
+ 
 TABLE_REASONING_PROMPT = (
     "Analyze the table shown in the provided image or images and reconstruct it as HTML. "
     "If there are multiple images, they are consecutive parts of the same table. "
