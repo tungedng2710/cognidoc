@@ -1,6 +1,7 @@
 import argparse
 import inspect
 import json
+import os
 from io import BytesIO
 from pathlib import Path
 
@@ -275,6 +276,8 @@ def main(argv=None):
     validate_args(args)
 
     if not args.dry_run:
+        # Unsloth 2026.6.9 generates a broken Qwen3.5 linear-attention wrapper.
+        os.environ.setdefault("UNSLOTH_COMPILE_DISABLE", "1")
         # Unsloth must be imported before Transformers, TRL, and Torch.
         import unsloth  # noqa: F401
 
