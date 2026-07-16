@@ -230,6 +230,12 @@ research/table_recognition/**
 !research/table_recognition/**/
 !research/table_recognition/**/*.md
 !research/table_recognition/baselines/table-transformer/**
+!research/table_recognition_vlm/
+research/table_recognition_vlm/*
+!research/table_recognition_vlm/sft/
+research/table_recognition_vlm/sft/*
+!research/table_recognition_vlm/sft/train.py
+!research/table_recognition_vlm/sft/README.md
 # !research/VLM/convert_to_ollama.py
 unsloth*
 *.pth
