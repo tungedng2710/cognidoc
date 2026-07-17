@@ -1,6 +1,7 @@
 """RLVR fine-tuning for image-to-table-HTML generation."""
 
 import argparse
+import inspect
 import json
 import os
 from pathlib import Path
@@ -264,6 +265,82 @@ def make_config(args, bfloat16_supported):
     )
 
 
+def patch_qwen35_generation_inputs(model):
+    """Expose mm_token_type_ids to Transformers generation validation.
+
+    Unsloth 2026.6.9 replaces the Qwen3.5 forward method with a compiled wrapper
+    whose introspected signature omits this valid multimodal argument.
+    """
+    base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
+    if getattr(base_model.config, "model_type", None) != "qwen3_5":
+        return False
+    original_prepare = base_model.prepare_inputs_for_generation
+    if "mm_token_type_ids" in inspect.signature(original_prepare).parameters:
+        return False
+
+    def prepare_inputs_for_generation(
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        position_ids=None,
+        use_cache=True,
+        pixel_values=None,
+        pixel_values_videos=None,
+        image_grid_thw=None,
+        video_grid_thw=None,
+        is_first_iteration=False,
+        mm_token_type_ids=None,
+        **kwargs,
+    ):
+        if position_ids is None and mm_token_type_ids is not None and (
+            image_grid_thw is not None or video_grid_thw is not None
+        ):
+            position_ids = base_model._prepare_position_ids_for_generation(
+                input_ids,
+                {
+                    "attention_mask": attention_mask,
+                    "mm_token_type_ids": mm_token_type_ids,
+                    "image_grid_thw": image_grid_thw,
+                    "video_grid_thw": video_grid_thw,
+                },
+            )
+        return original_prepare(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            position_ids=position_ids,
+            use_cache=use_cache,
+            pixel_values=pixel_values,
+            pixel_values_videos=pixel_values_videos,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
+            is_first_iteration=is_first_iteration,
+            mm_token_type_ids=mm_token_type_ids,
+            **kwargs,
+        )
+
+    base_model.prepare_inputs_for_generation = prepare_inputs_for_generation
+    return True
+
+
+def patch_qwen35_training_linear_attention(model):
+    """Avoid an FLA backward kernel that exceeds H200 shared memory."""
+    from transformers.models.qwen3_5.modeling_qwen3_5 import (
+        torch_chunk_gated_delta_rule,
+    )
+
+    base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
+    patched = 0
+    for module in base_model.modules():
+        if type(module).__name__ != "Qwen3_5GatedDeltaNet":
+            continue
+        module.chunk_gated_delta_rule = torch_chunk_gated_delta_rule
+        patched += 1
+    return patched
+
+
 def main(argv=None):
     args = parse_args(argv)
     validate_args(args)
@@ -302,6 +379,8 @@ def main(argv=None):
         use_rslora=False,
         loftq_config=None,
     )
+    patch_qwen35_generation_inputs(model)
+    patch_qwen35_training_linear_attention(model)
     FastVisionModel.for_training(model)
 
     trainer = GRPOTrainer(

@@ -75,6 +75,12 @@ pip install -U unsloth unsloth_zoo datasets trl accelerate pillow torch
 
 The implementation was checked against Unsloth `2026.6.9`, TRL `0.24.0`,
 Transformers `5.13.1`, and Datasets `4.3.0`.
+`grpo.py` includes a narrow generation-signature workaround for this Unsloth
+version, whose compiled Qwen3.5 wrapper otherwise rejects `mm_token_type_ids`
+before the first multimodal generation.
+The installed FLA gradient kernel also requests more shared memory than an H200
+can provide for this architecture. This script therefore uses Transformers'
+Torch gated-delta fallback for both generation and training.
 
 ## Validate
 
