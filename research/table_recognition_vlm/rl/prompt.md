@@ -1,13 +1,36 @@
-Convert the table shown in the provided image into structural HTML.
+OCR this image to HTML, arranged as layout blocks.  Each layout block should be a div with the data-bbox attribute representing the bounding box of the block in x0 y0 x1 y1 format.  Bboxes are normalized 0-1000. The data-label attribute is the label for the block.
 
-Transcribe the table exactly as it appears:
+Use the following labels:
+- Caption
+- Footnote
+- Equation-Block
+- List-Group
+- Page-Header
+- Page-Footer
+- Image
+- Section-Header
+- Table
+- Text
+- Complex-Block
+- Code-Block
+- Form
+- Table-Of-Contents
+- Figure
+- Chemical-Block
+- Diagram
+- Bibliography
+- Blank-Page
 
-- Preserve every visible character, including punctuation, capitalization, symbols, and numbers. Do not correct, translate, summarize, or infer text that is not visible.
-- Preserve the original top-to-bottom row order and left-to-right column order.
-- Represent every visible cell, including blank cells.
-- Reconstruct merged cells with the correct `rowspan` and `colspan` attributes. Omit these attributes when their value would be `1`.
-- Use table elements such as `<thead>`, `<tbody>`, `<tfoot>`, `<tr>`, `<th>`, and `<td>` only when they reflect the table's structure. Do not add layout, styling, classes, IDs, or metadata that is not present in the image.
-- Keep line breaks or multiple paragraphs inside a cell only when they are meaningful to its visible content.
-- When multiple images are provided, treat them as consecutive parts of one table and return one combined table in image order. Do not duplicate headers repeated only because of a page break.
+Only use these tags ['math', 'br', 'i', 'b', 'u', 'del', 'sup', 'sub', 'table', 'tr', 'td', 'p', 'th', 'div', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'ul', 'ol', 'li', 'input', 'a', 'span', 'img', 'hr', 'tbody', 'small', 'caption', 'strong', 'thead', 'big', 'code', 'chem'], and these attributes ['class', 'colspan', 'rowspan', 'display', 'checked', 'type', 'border', 'value', 'style', 'href', 'alt', 'align', 'data-bbox', 'data-label'].
 
-Return exactly one complete `<table>...</table>` element. Return no reasoning, explanation, confidence statement, surrounding document markup, or Markdown code fence.
+Guidelines:
+* Inline math: Surround math with <math>...</math> tags. Math expressions should be rendered in KaTeX-compatible LaTeX. Use display for block math.
+* Tables: Use colspan and rowspan attributes to match table structure.
+* Formatting: Maintain consistent formatting with the image, including spacing, indentation, subscripts/superscripts, and special characters.
+* Images: Include a description of any images in the alt attribute of an <img> tag. Do not fill out the src property. Describe in detail inside the div tag. Also convert charts to high fidelity data, and convert diagrams to mermaid.
+* Forms: Mark checkboxes and radio buttons properly.
+* Text: join lines together properly into paragraphs using <p>...</p> tags.  Use <br> tags for line breaks within paragraphs, but only when absolutely necessary to maintain meaning.
+* Chemistry: Use <chem>...</chem> tags for chemical formulas with reactive SMILES.
+* Lists: Preserve indents and proper list markers.
+* Use the simplest possible HTML structure that accurately represents the content of the block.
+* Make sure the text is accurate and easy for a human to read and interpret.  Reading order should be correct and natural.
