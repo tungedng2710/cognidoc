@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from grpo import patch_qwen35_generation_inputs
+from grpo import load_prompt, patch_qwen35_generation_inputs
 
 
 class _Config:
@@ -23,6 +25,21 @@ class GenerationPatchTest(unittest.TestCase):
         )
         self.assertEqual(values["mm_token_type_ids"], [0, 1])
         self.assertFalse(patch_qwen35_generation_inputs(model))
+
+
+class PromptTest(unittest.TestCase):
+    def test_load_prompt_strips_surrounding_whitespace(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory, "prompt.md")
+            path.write_text("\n  Convert the table.  \n", encoding="utf-8")
+            self.assertEqual(load_prompt(path), "Convert the table.")
+
+    def test_load_prompt_rejects_empty_file(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory, "prompt.md")
+            path.write_text(" \n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_prompt(path)
 
 
 if __name__ == "__main__":

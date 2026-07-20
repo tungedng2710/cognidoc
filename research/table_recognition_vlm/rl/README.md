@@ -1,8 +1,14 @@
 # Table Recognition RLVR
 
-Fine-tunes `Qwen/Qwen3.5-4B` with vision GRPO and verifiable rewards on
+Fine-tunes `datalab-to/chandra-ocr-2` with vision GRPO and verifiable rewards on
 `tungedng2710/table_html_with_reasoning`. The policy input is one or more table
 images and the policy output is only complete `<table>...</table>` HTML.
+
+The default instruction lives in [`prompt.md`](prompt.md), rather than being
+embedded in the training script. It specifies the transcription, structural
+HTML, merged-cell, multi-image, and output-only requirements. Supply a custom
+UTF-8 instruction with `--prompt-file /path/to/prompt.md`; an absent or empty
+file fails before the dataset or model is loaded.
 
 ## Dataset Findings
 
@@ -75,9 +81,10 @@ pip install -U unsloth unsloth_zoo datasets trl accelerate pillow torch
 
 The implementation was checked against Unsloth `2026.6.9`, TRL `0.24.0`,
 Transformers `5.13.1`, and Datasets `4.3.0`.
-`grpo.py` includes a narrow generation-signature workaround for this Unsloth
-version, whose compiled Qwen3.5 wrapper otherwise rejects `mm_token_type_ids`
-before the first multimodal generation.
+`grpo.py` includes a narrow, architecture-gated generation-signature workaround
+for this Unsloth version. It is applied only when the loaded model reports a
+Qwen3.5 base architecture whose compiled wrapper would otherwise reject
+`mm_token_type_ids` before the first multimodal generation.
 The installed FLA gradient kernel also requests more shared memory than an H200
 can provide for this architecture. This script therefore uses Transformers'
 Torch gated-delta fallback for both generation and training.
@@ -112,7 +119,7 @@ python grpo.py --language-only
 Resume from a trainer checkpoint:
 
 ```bash
-python grpo.py --resume-from-checkpoint qwen35_4b_table_html_grpo/checkpoint-100
+python grpo.py --resume-from-checkpoint chandra_ocr_2_table_html_grpo/checkpoint-100
 ```
 
 Both the effective training generation batch and global evaluation batch must

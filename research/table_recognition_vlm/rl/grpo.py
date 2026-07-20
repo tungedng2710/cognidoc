@@ -10,15 +10,9 @@ from reward import REWARD_FUNCTIONS, REWARD_WEIGHTS, extract_table_html, parse_t
 
 
 DEFAULT_DATASET_ID = "tungedng2710/table_html_with_reasoning"
-DEFAULT_MODEL_NAME = "Qwen/Qwen3.5-4B"
-DEFAULT_OUTPUT_DIR = "qwen35_4b_table_html_grpo"
-
-PROMPT = (
-    "Convert the table in the provided image into structural HTML. Preserve all visible "
-    "text, empty cells, row and column order, and rowspan and colspan attributes. If there "
-    "are multiple images, they are consecutive parts of the same table. Return only the "
-    "complete <table>...</table> markup, with no reasoning, explanation, or markdown."
-)
+DEFAULT_MODEL_NAME = "datalab-to/chandra-ocr-2"
+DEFAULT_OUTPUT_DIR = "chandra_ocr_2_table_html_grpo"
+DEFAULT_PROMPT_FILE = Path(__file__).with_name("prompt.md")
 
 
 def parse_args(argv=None):
@@ -28,6 +22,11 @@ def parse_args(argv=None):
     parser.add_argument("--dataset-revision", default=None)
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--prompt-file",
+        default=str(DEFAULT_PROMPT_FILE),
+        help="UTF-8 text file containing the user instruction.",
+    )
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--eval-split", default="test")
     parser.add_argument("--max-train-samples", type=int, default=None)
@@ -131,14 +130,24 @@ def validate_args(args):
         args.resume_from_checkpoint = str(checkpoint)
 
 
-def _training_record(_sample_id, table_html):
+def load_prompt(prompt_file):
+    path = Path(prompt_file).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"Prompt file does not exist: {path}")
+    prompt = path.read_text(encoding="utf-8").strip()
+    if not prompt:
+        raise ValueError(f"Prompt file is empty: {path}")
+    return prompt
+
+
+def _training_record(_sample_id, table_html, prompt):
     return {
-        "prompt": [{"role": "user", "content": PROMPT}],
+        "prompt": [{"role": "user", "content": prompt}],
         "table_html": extract_table_html(table_html),
     }
 
 
-def prepare_split(dataset, args, split_name, max_samples):
+def prepare_split(dataset, args, split_name, max_samples, prompt):
     required = {
         "id",
         "images",
@@ -170,12 +179,13 @@ def prepare_split(dataset, args, split_name, max_samples):
     dataset = dataset.map(
         _training_record,
         input_columns=["id", "table_html"],
+        fn_kwargs={"prompt": prompt},
         desc=f"Formatting {split_name} prompts",
     )
     return dataset.remove_columns("id")
 
 
-def load_datasets(args):
+def load_datasets(args, prompt):
     from datasets import load_dataset
 
     kwargs = {}
@@ -186,10 +196,10 @@ def load_datasets(args):
         if split not in datasets:
             raise ValueError(f"Split {split!r} not found; available splits: {list(datasets)}")
     train_dataset = prepare_split(
-        datasets[args.train_split], args, "train", args.max_train_samples
+        datasets[args.train_split], args, "train", args.max_train_samples, prompt
     )
     eval_dataset = prepare_split(
-        datasets[args.eval_split], args, "eval", args.max_eval_samples
+        datasets[args.eval_split], args, "eval", args.max_eval_samples, prompt
     )
     return train_dataset, eval_dataset
 
@@ -344,7 +354,8 @@ def patch_qwen35_training_linear_attention(model):
 def main(argv=None):
     args = parse_args(argv)
     validate_args(args)
-    train_dataset, eval_dataset = load_datasets(args)
+    prompt = load_prompt(args.prompt_file)
+    train_dataset, eval_dataset = load_datasets(args, prompt)
     print_summary(train_dataset, eval_dataset, args)
     if args.dry_run:
         print("Dry run passed: dataset, prompt, image count, and reference HTML are valid.")
