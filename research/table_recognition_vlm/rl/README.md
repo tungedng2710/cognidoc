@@ -1,8 +1,9 @@
-# Table Recognition RLVR
+# Table Recognition SFT + RLVR
 
-Fine-tunes `datalab-to/chandra-ocr-2` with vision GRPO and verifiable rewards on
-`tungedng2710/table_html_with_reasoning`. The policy input is one or more table
-images and the policy output is only complete `<table>...</table>` HTML.
+Fine-tunes `datalab-to/chandra-ocr-2` with LoRA SFT followed by vision GRPO and
+verifiable rewards on `tungedng2710/table_html_with_reasoning`. The policy input
+is one or more table images and the policy output is only complete
+`<table>...</table>` HTML.
 
 The default instruction lives in [`prompt.md`](prompt.md), rather than being
 embedded in the training script. It specifies the transcription, structural
@@ -33,6 +34,19 @@ HTML-only inference contract. This implementation therefore:
 
 All current rows contain one image, but the prompt and trainer retain list-of-
 images support.
+
+## Training Stages
+
+Training is intentionally split into two stages:
+
+1. `sft.py` teaches the base model the image-to-HTML task and exact output
+   contract using completion-only supervised loss.
+2. `grpo.py` continues the SFT LoRA adapter with verifiable rewards.
+
+Both stages use the same model, prompt, dataset filters, extracted table-only
+targets, sequence length, and LoRA target-module policy. SFT conversations are
+created lazily so decoded images for the complete dataset are not retained in
+memory. The raw reasoning trace is never an SFT target.
 
 ## Rewards
 
@@ -96,30 +110,68 @@ Run unit tests and a dataset dry run before allocating the model:
 ```bash
 conda activate tungn197
 python -m unittest -v test_reward.py test_loss.py
+python -m unittest -v test_grpo.py test_sft.py
+python sft.py --dry-run --max-train-samples 16 --max-eval-samples 8
 python grpo.py --dry-run --max-train-samples 16 --max-eval-samples 8
 ```
 
-## Train
+## Stage 1: LoRA SFT
 
-The default is 4-bit QLoRA, four sampled completions per image, an effective
-generation batch of four, and 500 optimizer steps:
+The default SFT run uses 4-bit QLoRA, completion-only loss, a batch size of one,
+eight accumulation steps, and one epoch:
 
 ```bash
 conda activate tungn197
-python grpo.py
+python sft.py
 ```
 
-Use 16-bit LoRA or language-only adapters when appropriate:
+The resulting adapter and processor are saved to
+`chandra_ocr_2_table_html_sft`. Resume an interrupted SFT trainer checkpoint
+with:
 
 ```bash
-python grpo.py --load-in-16bit
-python grpo.py --language-only
+python sft.py \
+  --resume-from-checkpoint chandra_ocr_2_table_html_sft/checkpoint-1000
 ```
 
-Resume from a trainer checkpoint:
+## Stage 2: GRPO
+
+Start GRPO from the saved SFT adapter by passing its directory as the model.
+The loader detects its PEFT configuration and continues that adapter instead of
+creating a second one:
 
 ```bash
-python grpo.py --resume-from-checkpoint chandra_ocr_2_table_html_grpo/checkpoint-100
+conda activate tungn197
+python grpo.py \
+  --model-name chandra_ocr_2_table_html_sft \
+  --output-dir chandra_ocr_2_table_html_sft_grpo
+```
+
+Do not use `--resume-from-checkpoint` to move from SFT to GRPO; that option is
+only for resuming a checkpoint produced by the same trainer stage. When GRPO
+loads an existing adapter, its LoRA rank and target modules come from the SFT
+adapter, so GRPO's `--lora-*` and `--language-only` creation options do not
+replace them. For a local adapter, GRPO reads `adapter_config.json` and
+automatically expands Unsloth's rank allocation when SFT used a larger rank.
+
+To use 16-bit LoRA or language-only adapters, choose those options during SFT
+and use the same quantization mode for GRPO:
+
+```bash
+python sft.py --load-in-16bit
+python grpo.py --model-name chandra_ocr_2_table_html_sft --load-in-16bit
+
+python sft.py --language-only
+python grpo.py --model-name chandra_ocr_2_table_html_sft
+```
+
+Resume an interrupted GRPO trainer checkpoint:
+
+```bash
+python grpo.py \
+  --model-name chandra_ocr_2_table_html_sft \
+  --output-dir chandra_ocr_2_table_html_sft_grpo \
+  --resume-from-checkpoint chandra_ocr_2_table_html_sft_grpo/checkpoint-100
 ```
 
 Both the effective training generation batch and global evaluation batch must

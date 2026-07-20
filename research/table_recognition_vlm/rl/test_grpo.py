@@ -1,8 +1,9 @@
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from grpo import load_prompt, patch_qwen35_generation_inputs
+from grpo import load_prompt, max_lora_rank_for_model, patch_qwen35_generation_inputs
 
 
 class _Config:
@@ -40,6 +41,21 @@ class PromptTest(unittest.TestCase):
             path.write_text(" \n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_prompt(path)
+
+
+class AdapterConfigTest(unittest.TestCase):
+    def test_local_adapter_rank_expands_unsloth_ceiling(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory, "adapter_config.json")
+            path.write_text(
+                json.dumps({"r": 32, "rank_pattern": {"vision": 64}}),
+                encoding="utf-8",
+            )
+            self.assertEqual(max_lora_rank_for_model(directory, 16), 64)
+
+    def test_base_model_uses_requested_rank(self):
+        with TemporaryDirectory() as directory:
+            self.assertEqual(max_lora_rank_for_model(directory, 16), 16)
 
 
 if __name__ == "__main__":

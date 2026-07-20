@@ -119,6 +119,8 @@ def validate_args(args):
         )
     if not 0 < args.top_p <= 1 or args.temperature <= 0:
         raise ValueError("--top-p must be in (0, 1] and --temperature must be positive")
+    if not 0 <= args.warmup_ratio < 1:
+        raise ValueError("--warmup-ratio must be in [0, 1)")
     if args.beta < 0 or args.epsilon < 0:
         raise ValueError("--beta and --epsilon must be non-negative")
     if not 0 <= args.lora_dropout < 1:
@@ -138,6 +140,20 @@ def load_prompt(prompt_file):
     if not prompt:
         raise ValueError(f"Prompt file is empty: {path}")
     return prompt
+
+
+def max_lora_rank_for_model(model_name, requested_rank):
+    """Include a local PEFT adapter's rank in Unsloth's allocation ceiling."""
+    config_path = Path(model_name).expanduser() / "adapter_config.json"
+    if not config_path.is_file():
+        return requested_rank
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        ranks = [requested_rank, int(config.get("r", requested_rank))]
+        ranks.extend(int(rank) for rank in config.get("rank_pattern", {}).values())
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(f"Invalid PEFT adapter config: {config_path}") from error
+    return max(ranks)
 
 
 def _training_record(_sample_id, table_html, prompt):
@@ -241,7 +257,7 @@ def make_config(args, bfloat16_supported):
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
-        warmup_steps=args.warmup_ratio,
+        warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
         optim="adamw_8bit",
@@ -373,23 +389,26 @@ def main(argv=None):
         load_in_4bit=not args.load_in_16bit,
         load_in_16bit=args.load_in_16bit,
         use_gradient_checkpointing="unsloth",
-        max_lora_rank=args.lora_r,
+        max_lora_rank=max_lora_rank_for_model(args.model_name, args.lora_r),
     )
-    model = FastVisionModel.get_peft_model(
-        model,
-        finetune_vision_layers=not args.language_only,
-        finetune_language_layers=True,
-        finetune_attention_modules=True,
-        finetune_mlp_modules=True,
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        target_modules=None,
-        random_state=args.seed,
-        use_rslora=False,
-        loftq_config=None,
-    )
+    if hasattr(model, "peft_config"):
+        print(f"Continuing the existing LoRA adapter from {args.model_name}.")
+    else:
+        model = FastVisionModel.get_peft_model(
+            model,
+            finetune_vision_layers=not args.language_only,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            bias="none",
+            target_modules=None,
+            random_state=args.seed,
+            use_rslora=False,
+            loftq_config=None,
+        )
     patch_qwen35_generation_inputs(model)
     patch_qwen35_training_linear_attention(model)
     FastVisionModel.for_training(model)
