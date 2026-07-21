@@ -243,13 +243,13 @@ def main() -> None:
     args = parse_args()
 
     model = AutoModelForImageTextToText.from_pretrained(
-        "datalab-to/chandra",
+        "datalab-to/chandra-ocr-2",
         dtype=torch.bfloat16,
         device_map="auto",
     )
     model.eval()
     model.processor = AutoProcessor.from_pretrained(
-        "datalab-to/chandra"
+        "datalab-to/chandra-ocr-2"
     )
     model.processor.tokenizer.padding_side = "left"
 
