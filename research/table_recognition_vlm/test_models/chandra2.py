@@ -249,7 +249,7 @@ def main() -> None:
     )
     model.eval()
     model.processor = AutoProcessor.from_pretrained(
-        "datalab-to/chandra-ocr-2"
+        "datalab-to/chandra"
     )
     model.processor.tokenizer.padding_side = "left"
 
