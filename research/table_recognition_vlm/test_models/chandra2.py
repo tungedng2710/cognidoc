@@ -1,52 +1,43 @@
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from chandra.model.hf import generate_hf
 from chandra.model.schema import BatchInputItem
-from PIL import Image
+from chandra.prompts import OCR_PROMPT
+from PIL import Image, ImageDraw
 from pathlib import Path
 from html.parser import HTMLParser
 from collections import Counter
 from math import sqrt
 from bs4 import BeautifulSoup
 import argparse
+import numpy as np
 import torch
 
 
 MAX_IMAGE_PIXELS = 3072 * 2048
+MAX_UPSCALE_FACTOR = 3.0
+RULING_DARK_THRESHOLD = 160
+RULING_MIN_ROW_DENSITY = 0.07
+RULING_MIN_PROMINENCE = 5.0
+RULING_MIN_SPAN_RATIO = 0.30
 
-DENSE_TABLE_PROMPT = """
-OCR this cropped image as exactly one HTML table. The outermost rectangular
-border is the boundary of one physical table. Any full-width titled or numbered
-band inside that border is a merged table row, never a document section and
-never a boundary between separate tables.
+TABLE_PROMPT = f"""{OCR_PROMPT}
 
-Your response must begin with <table> and end with </table>. Return exactly one
-<table>...</table> element. Never emit text, headings, paragraphs, Markdown,
-code fences, layout blocks, or additional tables outside that element.
-
-Table requirements:
-- Infer one finest-grained logical column grid for the whole outer table.
-  Represent wider section rows using colspan on that same grid.
-- Encode section titles as table rows and cells, not as headings outside the
-  table. Encode narrative or note regions as cells with the proper colspan.
-- Determine the logical row and column grid from borders, alignment, spacing,
-  and repeated header patterns before producing the table HTML.
-- Reconstruct the complete table; do not split, flatten, summarize, or omit it.
-- Preserve every empty cell as an explicit <td></td>; never shift a value into
-  an adjacent column.
-- Use colspan and rowspan only when the visible structure indicates a merged
-  cell. Preserve multi-level headers and nested row groups.
-- Preserve all text, punctuation, decimal and thousands separators, dates,
-  units, symbols, and numeric values exactly as printed.
-- Do not infer, calculate, normalize, or correct values.
-- Keep wrapped text inside the same cell.
-- For each table, maintain a consistent effective column grid across header
-  and body rows after accounting for rowspan and colspan.
-- Before responding, internally verify the table against its own grid and check
-  that no cell has shifted into a neighboring column.
-- Only use these tags: table, thead, tbody, tr, th, td, br, b, i, strong, small,
-  sup, sub, and input.
-- Only use these attributes: border, colspan, rowspan, type, checked, and value.
-- Do not use h1-h6, p, div, Markdown headings, or prose outside table cells.
+The image has already been cropped by layout detection and contains exactly one
+physical table. Transcribe the entire crop as one HTML <table>. Keep titles,
+notes, form fields, and full-width bands inside that table as rows and cells.
+Do not split the crop into document sections or multiple tables. Do not output
+anything outside the table. Ignore watermarks overlaid on or behind the table;
+do not transcribe watermark text, logos, stamps, or graphics into table cells.
+Do not confuse watermarks with legitimate cell content or filled form marks.
+Treat dotted, dashed, faint, or broken ruling lines as real table borders. Use
+them to separate rows and cells, but never transcribe the dots or dashes as text.
+The table may be sparse or form-like, with irregular merged cells, multi-level
+sections, and large blank regions. Preserve that geometry with accurate rowspan
+and colspan instead of forcing every visual row to have the same cell divisions.
+A partial ruling line divides only the columns it crosses. If a horizontal line
+stops at a vertical border, preserve adjacent cells that continue through it as
+row-spanning cells; do not extend the line through those cells. Keep blank merged
+regions as explicit empty cells.
 """.strip()
 
 
@@ -113,19 +104,87 @@ class TableColumnValidator(HTMLParser):
             self._active_rowspans = {}
 
 
-def upscale_for_dense_table(image: Image.Image) -> Image.Image:
-    """Increase detail when useful without exceeding Chandra's pixel cap."""
+def detect_horizontal_rulings(image: Image.Image) -> list[tuple[int, int, int]]:
+    """Find long, thin horizontal rules, including dotted/partial rules."""
+
+    gray = np.asarray(image.convert("L"))
+    dark = gray < RULING_DARK_THRESHOLD
+    row_counts = dark.sum(axis=1)
+    height, width = dark.shape
+    max_gap = max(4, round(width * 0.006))
+    min_span = round(width * RULING_MIN_SPAN_RATIO)
+    min_dark_pixels = max(20, round(width * 0.03))
+    segments = []
+
+    for y in range(3, height - 3):
+        count = int(row_counts[y])
+        if count < width * RULING_MIN_ROW_DENSITY:
+            continue
+        if count < row_counts[y - 1] or count < row_counts[y + 1]:
+            continue
+
+        neighboring_counts = np.concatenate(
+            (row_counts[y - 3 : y], row_counts[y + 1 : y + 4])
+        )
+        background_count = max(float(np.median(neighboring_counts)), 1.0)
+        if count / background_count < RULING_MIN_PROMINENCE:
+            continue
+
+        dark_x = np.flatnonzero(dark[y])
+        if dark_x.size == 0:
+            continue
+        split_points = np.flatnonzero(np.diff(dark_x) > max_gap) + 1
+        groups = np.split(dark_x, split_points)
+        for group in groups:
+            if group.size < min_dark_pixels:
+                continue
+            x0, x1 = int(group[0]), int(group[-1])
+            span = x1 - x0 + 1
+            if span < min_span:
+                continue
+            if group.size / span < RULING_MIN_ROW_DENSITY:
+                continue
+            segments.append((x0, y, x1))
+
+    return segments
+
+
+def prepare_table_image(
+    image: Image.Image,
+) -> tuple[Image.Image, list[tuple[int, int, int]]]:
+    """Upscale a table crop and reinforce detected ruling segments."""
 
     image = image.convert("RGB")
+    ruling_segments = detect_horizontal_rulings(image)
     pixel_count = image.width * image.height
-    scale = min(2.0, sqrt(MAX_IMAGE_PIXELS / pixel_count))
-    if scale <= 1.0:
-        return image
-
-    return image.resize(
-        (round(image.width * scale), round(image.height * scale)),
-        resample=Image.Resampling.LANCZOS,
+    scale = min(
+        MAX_UPSCALE_FACTOR,
+        sqrt(MAX_IMAGE_PIXELS / pixel_count),
     )
+    if scale <= 1.0:
+        prepared = image.copy()
+        scale = 1.0
+    else:
+        prepared = image.resize(
+            (int(image.width * scale), int(image.height * scale)),
+            resample=Image.Resampling.LANCZOS,
+        )
+
+    draw = ImageDraw.Draw(prepared)
+    line_width = max(1, round(scale))
+    for x0, y, x1 in ruling_segments:
+        draw.line(
+            (
+                round(x0 * scale),
+                round(y * scale),
+                round(x1 * scale),
+                round(y * scale),
+            ),
+            fill="black",
+            width=line_width,
+        )
+
+    return prepared, ruling_segments
 
 
 def validate_table_columns(html: str) -> None:
@@ -233,6 +292,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to the input document image.",
     )
+    parser.add_argument(
+        "--save-preprocessed",
+        action="store_true",
+        help="Save the resized, line-reinforced image beside the input image.",
+    )
     args = parser.parse_args()
     if not args.image.is_file():
         parser.error(f"input image does not exist or is not a file: {args.image}")
@@ -254,9 +318,20 @@ def main() -> None:
     model.processor.tokenizer.padding_side = "left"
 
     with Image.open(args.image) as source_image:
-        table_image = upscale_for_dense_table(source_image)
+        source_size = source_image.size
+        table_image, ruling_segments = prepare_table_image(source_image)
+    print(
+        f"Input image resized from {source_size} to {table_image.size}; "
+        f"reinforced {len(ruling_segments)} horizontal ruling segments"
+    )
+    if args.save_preprocessed:
+        preprocessed_path = args.image.with_name(
+            f"{args.image.stem}_preprocessed.png"
+        )
+        table_image.save(preprocessed_path)
+        print(f"Preprocessed image saved to {preprocessed_path}")
 
-    batch = [BatchInputItem(image=table_image, prompt=DENSE_TABLE_PROMPT)]
+    batch = [BatchInputItem(image=table_image, prompt=TABLE_PROMPT)]
     result = generate_hf(batch, model, max_output_tokens=12384)[0]
     html = normalize_single_physical_table(result.raw)
 
