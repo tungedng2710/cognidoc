@@ -187,7 +187,7 @@ def main() -> None:
     result = generate_hf(batch, model, max_output_tokens=12384)[0]
     markdown = parse_markdown(result.raw)
 
-    output_path = Path(__file__).with_name("chandra2_result.md")
+    output_path = args.image.with_suffix(".md")
     output_path.write_text(markdown, encoding="utf-8")
     validate_table_columns(markdown)
     print(f"Result saved to {output_path}")
