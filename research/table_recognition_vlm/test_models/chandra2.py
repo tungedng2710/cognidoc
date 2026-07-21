@@ -8,12 +8,10 @@ from pathlib import Path
 from html.parser import HTMLParser
 from collections import Counter
 from math import sqrt
+import argparse
 import torch
 
 
-IMAGE_PATH = Path(
-    "/root/tungn197/cognidoc/asssets/test_samples/page-62_cropped.png"
-)
 MAX_IMAGE_PIXELS = 3072 * 2048
 
 DENSE_TABLE_PROMPT = OCR_LAYOUT_PROMPT + """
@@ -153,23 +151,47 @@ def validate_table_columns(html: str) -> None:
             )
 
 
-model = AutoModelForImageTextToText.from_pretrained(
-    "datalab-to/chandra-ocr-2",
-    dtype=torch.bfloat16,
-    device_map="auto",
-)
-model.eval()
-model.processor = AutoProcessor.from_pretrained("datalab-to/chandra-ocr-2")
-model.processor.tokenizer.padding_side = "left"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Parse a document image with Chandra OCR 2."
+    )
+    parser.add_argument(
+        "image",
+        type=Path,
+        help="Path to the input document image.",
+    )
+    args = parser.parse_args()
+    if not args.image.is_file():
+        parser.error(f"input image does not exist or is not a file: {args.image}")
+    return args
 
-with Image.open(IMAGE_PATH) as source_image:
-    table_image = upscale_for_dense_table(source_image)
 
-batch = [BatchInputItem(image=table_image, prompt=DENSE_TABLE_PROMPT)]
+def main() -> None:
+    args = parse_args()
 
-result = generate_hf(batch, model, max_output_tokens=12384)[0]
-markdown = parse_markdown(result.raw)
-output_path = Path(__file__).with_name("chandra2_result.md")
-output_path.write_text(markdown, encoding="utf-8")
-validate_table_columns(markdown)
-print(f"Result saved to {output_path}")
+    model = AutoModelForImageTextToText.from_pretrained(
+        "datalab-to/chandra-ocr-2",
+        dtype=torch.bfloat16,
+        device_map="auto",
+    )
+    model.eval()
+    model.processor = AutoProcessor.from_pretrained(
+        "datalab-to/chandra-ocr-2"
+    )
+    model.processor.tokenizer.padding_side = "left"
+
+    with Image.open(args.image) as source_image:
+        table_image = upscale_for_dense_table(source_image)
+
+    batch = [BatchInputItem(image=table_image, prompt=DENSE_TABLE_PROMPT)]
+    result = generate_hf(batch, model, max_output_tokens=12384)[0]
+    markdown = parse_markdown(result.raw)
+
+    output_path = Path(__file__).with_name("chandra2_result.md")
+    output_path.write_text(markdown, encoding="utf-8")
+    validate_table_columns(markdown)
+    print(f"Result saved to {output_path}")
+
+
+if __name__ == "__main__":
+    main()
