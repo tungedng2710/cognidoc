@@ -1,0 +1,527 @@
+import hashlib
+import json
+import mimetypes
+import shutil
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
+from fastapi import UploadFile
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql import Select
+
+from .config import Settings
+from .domain.card import DatasetCard, parse_dataset_card
+from .domain.layout import DetectedConfig, detect_layout, is_previewable
+from .domain.manifest import ManifestFile, build_manifest
+from .domain.paths import normalize_repository_path
+from .domain.preview import compute_statistics, preview_split
+from .errors import ConflictError, NotFoundError, ValidationError
+from .models import (
+    DatasetConfig,
+    DatasetRepository,
+    DatasetRevision,
+    DatasetSplit,
+    ProcessingJob,
+    RepositoryFile,
+    RevisionStatus,
+    UploadSession,
+    UploadStatus,
+    utcnow,
+)
+from .schemas import DatasetCreate, DatasetPatch
+from .storage import ObjectStorage
+
+
+def _repository_query(namespace: str, slug: str) -> Select[tuple[DatasetRepository]]:
+    return select(DatasetRepository).where(
+        DatasetRepository.namespace == namespace, DatasetRepository.slug == slug
+    )
+
+
+def get_repository(db: Session, namespace: str, slug: str) -> DatasetRepository:
+    repository = db.scalar(_repository_query(namespace, slug))
+    if repository is None:
+        raise NotFoundError(f"Dataset {namespace}/{slug}")
+    return repository
+
+
+def get_revision(db: Session, repository: DatasetRepository, revision: str) -> DatasetRevision:
+    statement = (
+        select(DatasetRevision)
+        .where(
+            DatasetRevision.repository_id == repository.id,
+            DatasetRevision.revision_id == revision,
+        )
+        .options(
+            selectinload(DatasetRevision.files),
+            selectinload(DatasetRevision.configs).selectinload(DatasetConfig.splits),
+        )
+    )
+    result = db.scalar(statement)
+    if result is None:
+        raise NotFoundError(f"Revision {revision}")
+    return result
+
+
+def latest_revision(db: Session, repository_id: str) -> DatasetRevision | None:
+    return db.scalar(
+        select(DatasetRevision)
+        .where(DatasetRevision.repository_id == repository_id)
+        .order_by(DatasetRevision.created_at.desc(), DatasetRevision.id.desc())
+        .limit(1)
+    )
+
+
+def resolve_revision(
+    db: Session, repository: DatasetRepository, revision: str | None
+) -> DatasetRevision:
+    if revision and revision not in {"main", "latest"}:
+        return get_revision(db, repository, revision)
+    result = latest_revision(db, repository.id)
+    if result is None:
+        raise NotFoundError("Latest revision")
+    return get_revision(db, repository, result.revision_id)
+
+
+class DatasetService:
+    def __init__(self, db: Session, storage: ObjectStorage, settings: Settings) -> None:
+        self.db = db
+        self.storage = storage
+        self.settings = settings
+
+    def list_repositories(self) -> Sequence[DatasetRepository]:
+        return self.db.scalars(
+            select(DatasetRepository).order_by(
+                DatasetRepository.updated_at.desc(),
+                DatasetRepository.namespace,
+                DatasetRepository.slug,
+            )
+        ).all()
+
+    def create_repository(self, data: DatasetCreate) -> DatasetRepository:
+        if self.db.scalar(_repository_query(data.namespace, data.slug)):
+            raise ConflictError(f"Dataset {data.namespace}/{data.slug} already exists.")
+        repository = DatasetRepository(**data.model_dump())
+        self.db.add(repository)
+        self.db.commit()
+        self.db.refresh(repository)
+        return repository
+
+    def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
+        repository = get_repository(self.db, namespace, slug)
+        for key, value in data.model_dump(exclude_unset=True).items():
+            setattr(repository, key, value)
+        repository.updated_at = utcnow()
+        self.db.commit()
+        self.db.refresh(repository)
+        return repository
+
+    def create_upload(self, namespace: str, slug: str, commit_message: str) -> UploadSession:
+        repository = get_repository(self.db, namespace, slug)
+        upload = UploadSession(repository_id=repository.id, commit_message=commit_message)
+        self.db.add(upload)
+        self.db.commit()
+        self.db.refresh(upload)
+        (self.settings.staging_root / upload.id).mkdir(parents=True, exist_ok=False)
+        return upload
+
+    def get_upload(self, upload_id: str) -> UploadSession:
+        upload = self.db.get(UploadSession, upload_id)
+        if upload is None:
+            raise NotFoundError(f"Upload {upload_id}")
+        return upload
+
+    async def add_files(
+        self, upload_id: str, files: list[UploadFile], paths: list[str]
+    ) -> list[str]:
+        upload = self.get_upload(upload_id)
+        if upload.status != UploadStatus.open:
+            raise ConflictError("Files can only be added to an open upload.")
+        if len(files) != len(paths):
+            raise ValidationError("path_count_mismatch", "Provide one relative path for each file.")
+        if (
+            self.settings.max_file_count
+            and upload.file_count + len(files) > self.settings.max_file_count
+        ):
+            raise ValidationError(
+                "too_many_files", "Upload exceeds the configured file-count limit."
+            )
+
+        normalized_paths = [normalize_repository_path(path) for path in paths]
+        if len(normalized_paths) != len(set(normalized_paths)):
+            raise ValidationError("duplicate_path", "An upload may not contain duplicate paths.")
+        root = (self.settings.staging_root / upload.id).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        bytes_added = 0
+        written: list[Path] = []
+        try:
+            for source, normalized in zip(files, normalized_paths, strict=True):
+                destination = (root / normalized).resolve()
+                if root not in destination.parents or destination.exists():
+                    raise ValidationError(
+                        "duplicate_path", f"Duplicate or unsafe path: {normalized}"
+                    )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                file_bytes = 0
+                with destination.open("xb") as target:
+                    while chunk := await source.read(1024 * 1024):
+                        file_bytes += len(chunk)
+                        bytes_added += len(chunk)
+                        if (
+                            self.settings.max_file_bytes
+                            and file_bytes > self.settings.max_file_bytes
+                        ):
+                            raise ValidationError(
+                                "file_too_large",
+                                f"File {normalized!r} exceeds the configured limit.",
+                            )
+                        if (
+                            self.settings.max_upload_bytes
+                            and upload.bytes_received + bytes_added > self.settings.max_upload_bytes
+                        ):
+                            raise ValidationError(
+                                "upload_too_large", "Upload exceeds the configured size limit."
+                            )
+                        target.write(chunk)
+                written.append(destination)
+        except Exception:
+            for path in written:
+                path.unlink(missing_ok=True)
+            raise
+        finally:
+            for source in files:
+                await source.close()
+
+        upload.bytes_received += bytes_added
+        upload.file_count += len(files)
+        self.db.commit()
+        return normalized_paths
+
+    def _staged_files(self, upload: UploadSession) -> list[tuple[str, Path]]:
+        root = (self.settings.staging_root / upload.id).resolve()
+        if not root.is_dir():
+            raise ValidationError("missing_upload", "Upload staging data is missing.")
+        files: list[tuple[str, Path]] = []
+        for path in root.rglob("*"):
+            if path.is_symlink():
+                raise ValidationError("unsafe_symlink", "Symlinks are not accepted in uploads.")
+            if path.is_file():
+                files.append((path.relative_to(root).as_posix(), path))
+        files.sort(key=lambda item: item[0])
+        if not files:
+            raise ValidationError("empty_upload", "Upload at least one file before completing.")
+        if len(files) != upload.file_count:
+            raise ValidationError("file_count_mismatch", "The staged upload file count changed.")
+        return files
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _media_type(path: str) -> str:
+        if path.lower().endswith(".parquet"):
+            return "application/vnd.apache.parquet"
+        if path.lower().endswith(".jsonl"):
+            return "application/x-ndjson"
+        guessed, _ = mimetypes.guess_type(path)
+        return guessed or "application/octet-stream"
+
+    @staticmethod
+    def _validate_file_signature(repository_path: str, path: Path) -> None:
+        """Validate signatures for formats with stable magic bytes.
+
+        Text formats are validated when decoded by the preview reader. This check prevents a
+        renamed executable or arbitrary binary from being trusted as Parquet or a browser image.
+        """
+
+        suffix = path.suffix.lower()
+        with path.open("rb") as handle:
+            header = handle.read(16)
+            if suffix == ".parquet":
+                if path.stat().st_size < 8:
+                    valid = False
+                else:
+                    handle.seek(-4, 2)
+                    valid = header[:4] == b"PAR1" and handle.read(4) == b"PAR1"
+                if not valid:
+                    raise ValidationError(
+                        "invalid_file_signature",
+                        f"File {repository_path!r} is not a valid Parquet container.",
+                    )
+            signatures: dict[str, tuple[bytes, ...]] = {
+                ".png": (b"\x89PNG\r\n\x1a\n",),
+                ".jpg": (b"\xff\xd8\xff",),
+                ".jpeg": (b"\xff\xd8\xff",),
+                ".gif": (b"GIF87a", b"GIF89a"),
+                ".bmp": (b"BM",),
+            }
+            if suffix in signatures and not any(
+                header.startswith(signature) for signature in signatures[suffix]
+            ):
+                raise ValidationError(
+                    "invalid_file_signature",
+                    f"File {repository_path!r} does not match its image extension.",
+                )
+            if suffix == ".webp" and not (header.startswith(b"RIFF") and header[8:12] == b"WEBP"):
+                raise ValidationError(
+                    "invalid_file_signature",
+                    f"File {repository_path!r} is not a valid WebP container.",
+                )
+
+    def _card(self, staged: dict[str, Path]) -> DatasetCard:
+        readme = next((path for name, path in staged.items() if name.lower() == "readme.md"), None)
+        return parse_dataset_card(readme.read_bytes()) if readme else parse_dataset_card(b"")
+
+    def _same_as_latest(
+        self, repository: DatasetRepository, file_entries: list[ManifestFile]
+    ) -> DatasetRevision | None:
+        latest = latest_revision(self.db, repository.id)
+        if latest is None:
+            return None
+        current = self.db.scalars(
+            select(RepositoryFile).where(RepositoryFile.revision_id == latest.id)
+        ).all()
+        old_tree = [
+            (item.path, item.size_bytes, item.sha256)
+            for item in sorted(current, key=lambda x: x.path)
+        ]
+        new_tree = [(item.path, item.size_bytes, item.sha256) for item in file_entries]
+        return latest if old_tree == new_tree else None
+
+    def complete_upload(
+        self, upload_id: str, expected_file_count: int | None = None
+    ) -> DatasetRevision:
+        upload = self.get_upload(upload_id)
+        if upload.status == UploadStatus.complete and upload.revision_id:
+            repository = self.db.get(DatasetRepository, upload.repository_id)
+            if repository is None:
+                raise NotFoundError("Upload repository")
+            return get_revision(self.db, repository, upload.revision_id)
+        if upload.status != UploadStatus.open:
+            raise ConflictError("Only an open upload can be completed.")
+        if expected_file_count is not None and expected_file_count != upload.file_count:
+            raise ValidationError(
+                "file_count_mismatch",
+                f"Expected {expected_file_count} files but received {upload.file_count}.",
+            )
+
+        upload.status = UploadStatus.processing
+        job = ProcessingJob(repository_id=upload.repository_id, status="running", progress=0.05)
+        self.db.add(job)
+        self.db.commit()
+        try:
+            repository = self.db.get(DatasetRepository, upload.repository_id)
+            if repository is None:
+                raise NotFoundError("Upload repository")
+            staged_files = self._staged_files(upload)
+            staged = dict(staged_files)
+            card = self._card(staged)
+            job.progress = 0.2
+            layout = detect_layout(list(staged), card.metadata)
+
+            entries: list[ManifestFile] = []
+            for path, local_path in staged_files:
+                self._validate_file_signature(path, local_path)
+                sha256 = self._sha256(local_path)
+                object_key = (
+                    f"datasets/source/{repository.namespace}/{repository.slug}/{sha256}/{path}"
+                )
+                entries.append(
+                    ManifestFile(
+                        path, local_path.stat().st_size, sha256, self._media_type(path), object_key
+                    )
+                )
+            unchanged = self._same_as_latest(repository, entries)
+            if unchanged:
+                upload.status = UploadStatus.complete
+                upload.revision_id = unchanged.revision_id
+                job.revision_id = unchanged.revision_id
+                job.status = "succeeded"
+                job.progress = 1.0
+                job.finished_at = utcnow()
+                self.db.commit()
+                return get_revision(self.db, repository, unchanged.revision_id)
+
+            parent = latest_revision(self.db, repository.id)
+            _, manifest_bytes, manifest_sha = build_manifest(
+                f"{repository.namespace}/{repository.slug}",
+                entries,
+                parent.revision_id if parent else None,
+            )
+            revision_id = manifest_sha[:12]
+            derived_prefix = (
+                f"datasets/derived/{repository.namespace}/{repository.slug}/{revision_id}"
+            )
+            manifest_key = f"{derived_prefix}/manifest.json"
+            revision = DatasetRevision(
+                repository_id=repository.id,
+                parent_revision_id=parent.id if parent else None,
+                revision_id=revision_id,
+                branch=repository.default_branch,
+                commit_message=upload.commit_message,
+                manifest_object_key=manifest_key,
+                manifest_sha256=manifest_sha,
+                status=RevisionStatus.indexing,
+                card_markdown=card.markdown,
+                card_html=card.html,
+                card_metadata=card.metadata,
+            )
+            self.db.add(revision)
+            self.db.flush()
+
+            job.progress = 0.4
+            for entry in entries:
+                self.storage.put_file(entry.object_key, staged[entry.path])
+                self.db.add(
+                    RepositoryFile(
+                        revision_id=revision.id,
+                        path=entry.path,
+                        size_bytes=entry.size_bytes,
+                        sha256=entry.sha256,
+                        media_type=entry.media_type,
+                        storage_object_key=entry.object_key,
+                        is_previewable=is_previewable(entry.path),
+                    )
+                )
+            self.storage.put_bytes(manifest_key, manifest_bytes, "application/json")
+
+            self._save_layout(
+                revision,
+                layout,
+                staged,
+                self.settings.staging_root / upload.id,
+            )
+            revision.status = RevisionStatus.ready
+            repository.updated_at = utcnow()
+            upload.status = UploadStatus.complete
+            upload.revision_id = revision_id
+            job.revision_id = revision_id
+            job.status = "succeeded"
+            job.progress = 1.0
+            job.finished_at = utcnow()
+            self.db.commit()
+            shutil.rmtree(self.settings.staging_root / upload.id, ignore_errors=True)
+            return get_revision(self.db, repository, revision_id)
+        except Exception as exc:
+            self.db.rollback()
+            failed_upload = self.db.get(UploadSession, upload_id)
+            if failed_upload:
+                failed_upload.status = UploadStatus.failed
+                failed_upload.error_code = getattr(exc, "code", "ingestion_failed")
+                failed_upload.error_message = str(exc)[:2_000]
+            failed_job = self.db.get(ProcessingJob, job.id)
+            if failed_job:
+                failed_job.status = "failed"
+                failed_job.error_code = getattr(exc, "code", "ingestion_failed")
+                failed_job.error_message = str(exc)[:2_000]
+                failed_job.finished_at = utcnow()
+            self.db.commit()
+            raise
+
+    def _save_layout(
+        self,
+        revision: DatasetRevision,
+        layout: list[DetectedConfig],
+        staged: dict[str, Path],
+        staging_root: Path,
+    ) -> None:
+        for detected_config in layout:
+            config = DatasetConfig(
+                revision_id=revision.id,
+                name=detected_config.name,
+                builder_name=detected_config.builder_name,
+                builder_parameters=detected_config.parameters,
+            )
+            self.db.add(config)
+            self.db.flush()
+            for detected_split in detected_config.splits:
+                try:
+                    preview = preview_split(
+                        staging_root,
+                        detected_split.files,
+                        self.settings.preview_rows,
+                        detected_config.builder_name,
+                    )
+                except Exception as exc:
+                    raise ValidationError(
+                        "preview_failed",
+                        "Could not inspect "
+                        f"config {detected_config.name!r}, split {detected_split.name!r}: "
+                        f"{type(exc).__name__}.",
+                    ) from exc
+                self.db.add(
+                    DatasetSplit(
+                        config_id=config.id,
+                        name=detected_split.name,
+                        data_files=detected_split.files,
+                        num_rows=preview.total_rows,
+                        num_bytes=sum(staged[path].stat().st_size for path in detected_split.files),
+                        schema_json=preview.schema,
+                        preview_json=preview.rows,
+                        statistics_json=compute_statistics(preview.rows, preview.total_rows),
+                    )
+                )
+
+
+def repository_payload(db: Session, repository: DatasetRepository) -> dict[str, Any]:
+    latest = latest_revision(db, repository.id)
+    return {
+        "id": repository.id,
+        "namespace": repository.namespace,
+        "slug": repository.slug,
+        "visibility": repository.visibility,
+        "description": repository.description,
+        "default_branch": repository.default_branch,
+        "created_at": repository.created_at,
+        "updated_at": repository.updated_at,
+        "latest_revision": latest,
+    }
+
+
+def apply_viewer_filter(rows: list[dict[str, Any]], raw_filter: str | None) -> list[dict[str, Any]]:
+    if not raw_filter:
+        return rows
+    try:
+        value = json.loads(raw_filter)
+    except json.JSONDecodeError as exc:
+        raise ValidationError("invalid_filter", "Filter must be valid JSON.") from exc
+    if not isinstance(value, dict) or not {"column", "op", "value"} <= set(value):
+        raise ValidationError("invalid_filter", "Filter requires column, op, and value fields.")
+    column, operator, expected = value["column"], value["op"], value["value"]
+    if operator not in {"eq", "ne", "contains", "gt", "gte", "lt", "lte"}:
+        raise ValidationError("invalid_filter", f"Unsupported filter operator: {operator}")
+
+    def matches(row: dict[str, Any]) -> bool:
+        actual: Any = row.get(str(column))
+        if operator == "eq":
+            return bool(actual == expected)
+        if operator == "ne":
+            return bool(actual != expected)
+        if operator == "contains":
+            return str(expected).lower() in str(actual).lower()
+        if isinstance(actual, str) and isinstance(expected, str):
+            if operator == "gt":
+                return actual > expected
+            if operator == "gte":
+                return actual >= expected
+            if operator == "lt":
+                return actual < expected
+            return actual <= expected
+        if isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
+            if operator == "gt":
+                return actual > expected
+            if operator == "gte":
+                return actual >= expected
+            if operator == "lt":
+                return actual < expected
+            return actual <= expected
+        return False
+
+    return [row for row in rows if matches(row)]

@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Avenir Next", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-slate-200);
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    color: var(--color-slate-900);
+    background:
+      radial-gradient(circle at 8% 8%, rgb(204 251 241 / 0.32), transparent 24rem),
+      radial-gradient(circle at 95% 15%, rgb(254 243 199 / 0.38), transparent 25rem),
+      #f8f7f2;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:not(:disabled),
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}
+
+@layer components {
+  .button-primary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-800;
+  }
+
+  .button-secondary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-800;
+  }
+
+  .icon-button {
+    @apply grid size-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900;
+  }
+
+  .field-label {
+    @apply block text-xs font-semibold text-slate-700;
+  }
+
+  .field-input {
+    @apply mt-1 block min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-700 focus:ring-3 focus:ring-teal-700/10;
+  }
+
+  .eyebrow {
+    @apply text-[10px] font-bold tracking-[0.18em] text-teal-800 uppercase;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold tracking-wide text-slate-600 uppercase;
+  }
+
+  .select-label {
+    @apply relative inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500 shadow-sm;
+  }
+
+  .select-label select {
+    @apply appearance-none bg-transparent pr-3 font-semibold text-slate-900 outline-none;
+  }
+
+  .tab-link {
+    @apply inline-flex shrink-0 items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-semibold text-slate-500 transition hover:text-slate-900;
+  }
+
+  .tab-link-active {
+    @apply border-teal-800 text-teal-900;
+  }
+
+  .card-markdown {
+    @apply max-w-none text-[15px] leading-7 text-slate-700;
+  }
+
+  .card-markdown h1 {
+    @apply mt-2 mb-7 text-4xl font-semibold tracking-[-0.035em] text-slate-950;
+  }
+
+  .card-markdown h2 {
+    @apply mt-10 mb-4 border-b border-slate-100 pb-3 text-2xl font-semibold tracking-tight text-slate-950;
+  }
+
+  .card-markdown h3 {
+    @apply mt-7 mb-3 text-lg font-semibold text-slate-950;
+  }
+
+  .card-markdown p,
+  .card-markdown ul,
+  .card-markdown ol {
+    @apply my-4;
+  }
+
+  .card-markdown ul {
+    @apply list-disc pl-6;
+  }
+
+  .card-markdown ol {
+    @apply list-decimal pl-6;
+  }
+
+  .card-markdown a {
+    @apply font-medium text-teal-800 underline decoration-teal-300 underline-offset-4 hover:text-teal-600;
+  }
+
+  .card-markdown code {
+    @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.88em] text-violet-700;
+  }
+
+  .card-markdown pre {
+    @apply my-5 overflow-x-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100;
+  }
+
+  .card-markdown pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+
+  .card-markdown blockquote {
+    @apply my-5 border-l-4 border-amber-300 bg-amber-50 py-2 pr-4 pl-5 text-amber-950;
+  }
+
+  .card-markdown table {
+    @apply my-6 w-full border-collapse overflow-hidden rounded-xl text-sm;
+  }
+
+  .card-markdown th,
+  .card-markdown td {
+    @apply border border-slate-200 px-3 py-2 text-left;
+  }
+
+  .card-markdown th {
+    @apply bg-slate-50 font-semibold text-slate-900;
+  }
+}
+
