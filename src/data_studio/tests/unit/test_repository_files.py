@@ -11,7 +11,7 @@ from data_studio_api.models import (
 )
 from data_studio_api.service import DatasetService, get_revision
 from data_studio_api.storage import LocalObjectStorage
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 
@@ -91,3 +91,8 @@ def test_revision_file_loading_is_optional_and_file_pages_are_searchable(
         )
         assert literal_total == 0
         assert not literal_wildcard
+
+        service.delete_repository("research", "demo")
+        assert db.scalar(select(func.count()).select_from(DatasetRepository)) == 0
+        assert db.scalar(select(func.count()).select_from(DatasetRevision)) == 0
+        assert db.scalar(select(func.count()).select_from(RepositoryFile)) == 0

@@ -156,14 +156,13 @@ export function DatasetsPage() {
           <div className="relative grid gap-10 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
           <div>
             <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-cyan-300 uppercase">
-              <Sparkles className="size-3.5" /> Private dataset hub
+              <Sparkles className="size-3.5" /> {user ? "Private dataset hub" : "Public dataset catalog"}
             </p>
             <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
               Your datasets, legible and versioned.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
-              Upload Hugging Face-compatible repositories without conversion. Browse cards, shards,
-              schemas, and rows from one focused workspace.
+              {user ? "Upload Hugging Face-compatible repositories without conversion. Browse cards, shards, schemas, and rows from one focused workspace." : "Browse public dataset cards, repository files, schemas, and indexed rows. Sign in to create and manage your own repositories."}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

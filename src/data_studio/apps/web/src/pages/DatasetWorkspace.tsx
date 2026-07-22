@@ -710,7 +710,7 @@ export function DatasetWorkspace() {
                 <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-950/15"><Database className="size-6" /></span>
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                    <span>{namespace}</span><span>/</span><span className="status-pill"><LockKeyhole className="size-3" /> {repository.visibility}</span>
+                    <span>{namespace}</span><span>/</span><span className="status-pill">{repository.visibility === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />} {repository.visibility}</span>
                   </div>
                   <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
                   <p className="mt-2 max-w-2xl text-sm text-slate-500">{repository.description || "No description yet."}</p>

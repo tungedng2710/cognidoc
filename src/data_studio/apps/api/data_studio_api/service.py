@@ -122,6 +122,8 @@ class DatasetService:
 
     def delete_repository(self, namespace: str, slug: str) -> None:
         repository = get_repository(self.db, namespace, slug)
+        self.storage.delete_prefix(f"datasets/source/{namespace}/{slug}/")
+        self.storage.delete_prefix(f"datasets/derived/{namespace}/{slug}/")
         revision_ids = select(DatasetRevision.id).where(
             DatasetRevision.repository_id == repository.id
         )
@@ -144,7 +146,7 @@ class DatasetService:
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
-        for key, value in data.model_dump(exclude_unset=True).items():
+        for key, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
             setattr(repository, key, value)
         repository.updated_at = utcnow()
         self.db.commit()

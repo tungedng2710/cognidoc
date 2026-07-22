@@ -18,6 +18,8 @@ class ObjectStorage(Protocol):
 
     def iter_object(self, key: str, chunk_size: int = 1024 * 1024) -> Iterator[bytes]: ...
 
+    def delete_prefix(self, prefix: str) -> None: ...
+
 
 class LocalObjectStorage:
     def __init__(self, root: Path) -> None:
@@ -47,6 +49,13 @@ class LocalObjectStorage:
         with self._resolve(key).open("rb") as handle:
             while chunk := handle.read(chunk_size):
                 yield chunk
+
+    def delete_prefix(self, prefix: str) -> None:
+        target = self._resolve(prefix.rstrip("/"))
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
 
 
 class S3ObjectStorage:
@@ -86,6 +95,19 @@ class S3ObjectStorage:
         body: BinaryIO = response["Body"]
         while chunk := body.read(chunk_size):
             yield chunk
+
+    def delete_prefix(self, prefix: str) -> None:
+        while True:
+            response = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
+            objects = [{"Key": item["Key"]} for item in response.get("Contents", [])]
+            if not objects:
+                break
+            self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": objects, "Quiet": True},
+            )
+            if not response.get("IsTruncated"):
+                break
 
 
 def create_storage(settings: Settings) -> ObjectStorage:

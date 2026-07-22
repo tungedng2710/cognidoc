@@ -64,6 +64,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             media_type="application/problem+json",
+            headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
             content={
                 "type": f"https://data-studio.local/problems/{exc.code}",
                 "title": exc.title,

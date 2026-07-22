@@ -146,8 +146,16 @@ All application endpoints live under `/api/v1`. The interactive OpenAPI document
 request and response contracts.
 
 ```text
+POST /auth/register
+POST /auth/login
+POST /auth/logout
+GET  /auth/me
+POST /auth/tokens
 POST /datasets
+GET  /datasets
 GET  /datasets/{namespace}/{dataset}
+PATCH /datasets/{namespace}/{dataset}
+DELETE /datasets/{namespace}/{dataset}
 POST /datasets/{namespace}/{dataset}/uploads
 POST /uploads/{upload_id}/files
 POST /uploads/{upload_id}/complete
@@ -158,10 +166,14 @@ GET  /datasets/{namespace}/{dataset}/viewer/{config}/{split}
 GET  /datasets/{namespace}/{dataset}/statistics/{config}/{split}
 ```
 
-The development authentication adapter reads `X-Data-Studio-Role` (`reader`, `contributor`, or
-`admin`) and `X-Data-Studio-Subject`. It defaults to a local admin only to keep a direct development
-run usable. Production deployments must place an authenticating proxy in front of the API or replace
-this adapter; client-supplied role headers are not a production identity system.
+Authentication uses signed HttpOnly session cookies for the web application. Passwords are stored as
+salted PBKDF2-SHA256 hashes. Personal API tokens use `Authorization: Bearer ds_pat_...`; only their
+SHA-256 hashes are persisted, and the raw value is returned only by the create-token response.
+
+The first registered account becomes the workspace administrator and adopts repositories created
+before the ownership migration. Later accounts own the datasets they create. Anonymous users can
+list, browse, preview, and download public datasets. Signed-in users can also read internal datasets,
+while private datasets and all mutations are restricted to the owner or workspace administrator.
 
 ## Configuration
 
@@ -180,6 +192,9 @@ Backend variables use the `DATA_STUDIO_` prefix. Important settings include:
 | `DATA_STUDIO_MAX_FILE_BYTES` | 512 MiB | Maximum individual file size |
 | `DATA_STUDIO_MAX_FILE_COUNT` | 10,000 | Maximum files per upload |
 | `DATA_STUDIO_PREVIEW_ROWS` | 100 | Maximum persisted preview sample |
+| `DATA_STUDIO_AUTH_SECRET_KEY` | development placeholder | Session-signing secret; replace in deployments |
+| `DATA_STUDIO_AUTH_SESSION_TTL_SECONDS` | 604,800 | Browser session lifetime |
+| `DATA_STUDIO_AUTH_COOKIE_SECURE` | `false` | Require HTTPS when sending the session cookie |
 | `VITE_API_URL` | `/api/v1` | Browser API root |
 
 `.env.example` contains placeholders only. RustFS credentials never reach the browser.
@@ -231,8 +246,8 @@ The following items from the complete `AGENT.md` MVP are deliberately not claime
   internal Git commits and DVC pointer/cache push are the next versioning slice.
 - Preview rows are a bounded persisted sample. DuckDB pushdown, full-dataset cursors, global sort,
   and indexed text search are not implemented yet.
-- The development role-header adapter is not production authentication, membership, or scoped API
-  tokens.
+- Authentication supports local accounts, owner authorization, and scoped personal API tokens;
+  external OIDC/SSO and organization membership are not implemented yet.
 - Large browser uploads are streamed into the API, but multipart/resumable presigned S3 uploads are
   not implemented yet.
 - The API accepts a Hugging Face-compatible repository contract; it is not a drop-in implementation
