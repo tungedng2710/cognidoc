@@ -2,7 +2,17 @@ from data_studio_api.config import get_settings
 from fastapi.testclient import TestClient
 
 
+def _register(client: TestClient, username: str = "owner") -> dict:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": "secure-password"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def _create_repository(client: TestClient) -> None:
+    _register(client)
     response = client.post(
         "/api/v1/datasets",
         json={
@@ -72,6 +82,7 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     )
     assert viewer.status_code == 200, viewer.text
     assert viewer.json()["rows"] == [{"text": "excellent", "label": 1, "meta": {"lang": "en"}}]
+    assert viewer.json()["available_rows"] == 2
     assert viewer.json()["capabilities"]["preview_is_bounded"] is True
 
     download = client.get(
@@ -92,6 +103,22 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     dataset = client.get("/api/v1/datasets/research/sentiment").json()
     assert dataset["latest_revision"]["revision_id"] == revision["revision_id"]
 
+    lightweight = client.get(
+        f"/api/v1/datasets/research/sentiment/revisions/{revision['revision_id']}",
+        params={"include_files": False},
+    )
+    assert lightweight.status_code == 200
+    assert lightweight.json()["files"] == []
+    assert lightweight.json()["configs"][0]["name"] == "default"
+
+    file_page = client.get(
+        f"/api/v1/datasets/research/sentiment/tree/{revision['revision_id']}/page",
+        params={"limit": 1, "search": "train"},
+    )
+    assert file_page.status_code == 200
+    assert file_page.json()["total"] == 1
+    assert file_page.json()["items"][0]["path"] == "data/train-00000-of-00001.jsonl"
+
 
 def test_retrying_same_tree_is_idempotent(client: TestClient) -> None:
     _create_repository(client)
@@ -103,14 +130,55 @@ def test_retrying_same_tree_is_idempotent(client: TestClient) -> None:
     assert len(revisions) == 1
 
 
-def test_role_boundary_blocks_reader_upload(client: TestClient) -> None:
+def test_anonymous_user_cannot_create_dataset(client: TestClient) -> None:
     response = client.post(
         "/api/v1/datasets",
         json={"namespace": "research", "slug": "blocked"},
-        headers={"X-Data-Studio-Role": "reader"},
     )
-    assert response.status_code == 403
-    assert response.json()["code"] == "forbidden"
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_public_read_and_owner_only_mutations(client: TestClient) -> None:
+    _register(client, "owner")
+    created = client.post(
+        "/api/v1/datasets",
+        json={
+            "namespace": "owner",
+            "slug": "public-demo",
+            "visibility": "public",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["owner"] == "owner"
+    assert created.json()["can_edit"] is True
+
+    assert client.post("/api/v1/auth/logout").status_code == 204
+    public_list = client.get("/api/v1/datasets")
+    assert [item["slug"] for item in public_list.json()["items"]] == ["public-demo"]
+    assert client.get("/api/v1/datasets/owner/public-demo").status_code == 200
+    assert (
+        client.patch(
+            "/api/v1/datasets/owner/public-demo", json={"description": "anonymous"}
+        ).status_code
+        == 401
+    )
+
+    _register(client, "stranger")
+    assert (
+        client.patch(
+            "/api/v1/datasets/owner/public-demo", json={"description": "not mine"}
+        ).status_code
+        == 403
+    )
+    assert client.delete("/api/v1/datasets/owner/public-demo").status_code == 403
+
+    logged_in = client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": "secure-password"},
+    )
+    assert logged_in.status_code == 200
+    assert client.delete("/api/v1/datasets/owner/public-demo").status_code == 204
 
 
 def test_zero_upload_limits_disable_resource_caps(client: TestClient) -> None:

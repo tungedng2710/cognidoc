@@ -48,11 +48,45 @@ class UploadStatus(StrEnum):
     failed = "failed"
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(512))
+    is_admin: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    repositories: Mapped[list["DatasetRepository"]] = relationship(back_populates="owner")
+    api_tokens: Mapped[list["ApiToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    token_prefix: Mapped[str] = mapped_column(String(20), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="api_tokens")
+
+
 class DatasetRepository(Base):
     __tablename__ = "dataset_repositories"
     __table_args__ = (UniqueConstraint("namespace", "slug"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     namespace: Mapped[str] = mapped_column(String(64), index=True)
     slug: Mapped[str] = mapped_column(String(96), index=True)
     visibility: Mapped[Visibility] = mapped_column(Enum(Visibility), default=Visibility.private)
@@ -66,6 +100,7 @@ class DatasetRepository(Base):
     revisions: Mapped[list["DatasetRevision"]] = relationship(
         back_populates="repository", cascade="all, delete-orphan"
     )
+    owner: Mapped[User | None] = relationship(back_populates="repositories")
 
 
 class DatasetRevision(Base):

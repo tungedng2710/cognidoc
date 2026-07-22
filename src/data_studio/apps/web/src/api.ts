@@ -1,14 +1,25 @@
 import type {
   Dataset,
   DatasetConfig,
+  FilePage,
   Problem,
   Revision,
   RevisionSummary,
+  User,
   ViewerResponse,
   Visibility,
 } from "./types";
 
 const API_ROOT = import.meta.env.VITE_API_URL ?? "/api/v1";
+
+export interface UploadProgress {
+  phase: "preparing" | "uploading" | "publishing";
+  message: string;
+  uploadedFiles: number;
+  totalFiles: number;
+  uploadedBytes: number;
+  totalBytes: number;
+}
 
 export class ApiError extends Error {
   readonly problem: Problem;
@@ -23,6 +34,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...init?.headers,
@@ -38,10 +50,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const problem = (await response.json().catch(() => fallback)) as Problem;
     throw new ApiError(problem);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
 export const api = {
+  currentUser(): Promise<User> {
+    return request("/auth/me");
+  },
+
+  register(body: {
+    username: string;
+    display_name: string;
+    email: string;
+    password: string;
+  }): Promise<User> {
+    return request("/auth/register", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  login(body: { username: string; password: string }): Promise<User> {
+    return request("/auth/login", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  logout(): Promise<void> {
+    return request("/auth/logout", { method: "POST" });
+  },
+
   async listDatasets(): Promise<Dataset[]> {
     const response = await request<{ items: Dataset[] }>("/datasets");
     return response.items;
@@ -56,13 +90,47 @@ export const api = {
     return request("/datasets", { method: "POST", body: JSON.stringify(body) });
   },
 
+  updateDataset(
+    namespace: string,
+    dataset: string,
+    body: { visibility?: Visibility; description?: string },
+  ): Promise<Dataset> {
+    return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+
+  deleteDataset(namespace: string, dataset: string): Promise<void> {
+    return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
+      method: "DELETE",
+    });
+  },
+
   dataset(namespace: string, dataset: string): Promise<Dataset> {
     return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`);
   },
 
   revision(namespace: string, dataset: string, revision = "main"): Promise<Revision> {
+    const params = new URLSearchParams({ include_files: "false" });
     return request(
-      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/revisions/${encodeURIComponent(revision)}`,
+      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/revisions/${encodeURIComponent(revision)}?${params}`,
+    );
+  },
+
+  filePage(
+    namespace: string,
+    dataset: string,
+    revision: string,
+    options: { offset?: number; limit?: number; search?: string },
+  ): Promise<FilePage> {
+    const params = new URLSearchParams({
+      offset: String(options.offset ?? 0),
+      limit: String(options.limit ?? 100),
+    });
+    if (options.search) params.set("search", options.search);
+    return request(
+      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/tree/${encodeURIComponent(revision)}/page?${params}`,
     );
   },
 
@@ -114,27 +182,71 @@ export const api = {
     namespace: string,
     dataset: string,
     files: File[],
-    onProgress: (message: string) => void,
+    onProgress: (progress: UploadProgress) => void,
+    signal?: AbortSignal,
   ): Promise<Revision> {
-    onProgress("Creating upload session…");
+    const totalBytes = files.reduce((total, file) => total + file.size, 0);
+    const report = (
+      phase: UploadProgress["phase"],
+      message: string,
+      uploadedFiles = 0,
+      uploadedBytes = 0,
+    ) => onProgress({ phase, message, uploadedFiles, totalFiles: files.length, uploadedBytes, totalBytes });
+    report("preparing", "Creating a secure upload session…");
     const upload = await request<{ id: string }>(
       `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/uploads`,
-      { method: "POST", body: JSON.stringify({ commit_message: "Upload dataset folder" }) },
+      { method: "POST", body: JSON.stringify({ commit_message: "Upload dataset folder" }), signal },
     );
-    const form = new FormData();
-    for (const file of files) {
-      const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-      const pathParts = relative?.split("/") ?? [];
-      const path = pathParts.length > 1 ? pathParts.slice(1).join("/") : file.name;
-      form.append("files", file, file.name);
-      form.append("paths", path);
+
+    let uploadedFiles = 0;
+    let uploadedBytes = 0;
+    let index = 0;
+    let batchNumber = 0;
+    const maxBatchFiles = 200;
+    const maxBatchBytes = 128 * 1024 * 1024;
+    while (index < files.length) {
+      const batch: File[] = [];
+      let batchBytes = 0;
+      while (index < files.length && batch.length < maxBatchFiles) {
+        const candidate = files[index];
+        if (!candidate) break;
+        if (batch.length && batchBytes + candidate.size > maxBatchBytes) break;
+        batch.push(candidate);
+        batchBytes += candidate.size;
+        index += 1;
+        if (candidate.size >= maxBatchBytes) break;
+      }
+      const form = new FormData();
+      batchNumber += 1;
+      for (const file of batch) {
+        const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+        const pathParts = relative?.split("/") ?? [];
+        const path = pathParts.length > 1 ? pathParts.slice(1).join("/") : file.name;
+        form.append("files", file, file.name);
+        form.append("paths", path);
+      }
+      report(
+        "uploading",
+        `Uploading batch ${batchNumber.toLocaleString()}…`,
+        uploadedFiles,
+        uploadedBytes,
+      );
+      await request(`/uploads/${upload.id}/files`, { method: "POST", body: form, signal });
+      uploadedFiles += batch.length;
+      uploadedBytes += batchBytes;
+      report(
+        "uploading",
+        `${uploadedFiles.toLocaleString()} of ${files.length.toLocaleString()} files uploaded`,
+        uploadedFiles,
+        uploadedBytes,
+      );
     }
-    onProgress(`Uploading ${files.length.toLocaleString()} files…`);
-    await request(`/uploads/${upload.id}/files`, { method: "POST", body: form });
-    onProgress("Validating card, layout, and previews…");
-    return request(`/uploads/${upload.id}/complete`, {
+
+    report("publishing", "Validating, indexing, and publishing the immutable revision…", uploadedFiles, uploadedBytes);
+    return request(`/uploads/${upload.id}/complete?include_files=false`, {
       method: "POST",
       body: JSON.stringify({ expected_file_count: files.length }),
+      signal,
     });
   },
 

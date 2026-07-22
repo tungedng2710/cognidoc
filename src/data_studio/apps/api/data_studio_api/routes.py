@@ -1,22 +1,36 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .auth import Principal, Role, authorize, get_principal
+from .auth import (
+    Principal,
+    authorize_repository_read,
+    authorize_repository_write,
+    can_read_repository,
+    get_optional_principal,
+    get_principal,
+    require_scope,
+)
 from .config import Settings, get_settings
 from .database import get_db
-from .domain.paths import normalize_repository_path
 from .errors import NotFoundError
-from .models import DatasetConfig, DatasetRevision, DatasetSplit, ProcessingJob
+from .models import (
+    DatasetConfig,
+    DatasetRepository,
+    DatasetRevision,
+    DatasetSplit,
+    ProcessingJob,
+)
 from .schemas import (
     ConfigRead,
     DatasetCreate,
     DatasetList,
     DatasetPatch,
     DatasetRead,
+    FilePage,
     JobRead,
     RevisionRead,
     RevisionSummary,
@@ -40,6 +54,7 @@ router = APIRouter(prefix="/api/v1")
 Database = Annotated[Session, Depends(get_db)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
+OptionalPrincipal = Annotated[Principal | None, Depends(get_optional_principal)]
 
 
 def service(request: Request, db: Database, settings: SettingsDependency) -> DatasetService:
@@ -50,26 +65,80 @@ def service(request: Request, db: Database, settings: SettingsDependency) -> Dat
 Service = Annotated[DatasetService, Depends(service)]
 
 
+def _repository_for_read(
+    db: Session,
+    namespace: str,
+    dataset: str,
+    principal: Principal | None,
+) -> DatasetRepository:
+    repository = get_repository(db, namespace, dataset)
+    authorize_repository_read(repository, principal)
+    return repository
+
+
+def _repository_for_write(
+    db: Session,
+    namespace: str,
+    dataset: str,
+    principal: Principal,
+) -> DatasetRepository:
+    repository = get_repository(db, namespace, dataset)
+    authorize_repository_write(repository, principal)
+    return repository
+
+
+def _repository_payload(
+    db: Session, repository: DatasetRepository, principal: Principal | None
+) -> dict[str, Any]:
+    return repository_payload(
+        db,
+        repository,
+        viewer_id=principal.user_id if principal else None,
+        viewer_is_admin=principal.is_admin if principal else False,
+    )
+
+
+def _revision_payload(revision: DatasetRevision, *, include_files: bool) -> dict[str, Any]:
+    return {
+        "revision_id": revision.revision_id,
+        "branch": revision.branch,
+        "commit_message": revision.commit_message,
+        "status": revision.status,
+        "manifest_sha256": revision.manifest_sha256,
+        "error_code": revision.error_code,
+        "error_message": revision.error_message,
+        "created_at": revision.created_at,
+        "card_markdown": revision.card_markdown,
+        "card_html": revision.card_html,
+        "card_metadata": revision.card_metadata,
+        "files": revision.files if include_files else [],
+        "configs": revision.configs,
+    }
+
+
 @router.get("/datasets", response_model=DatasetList)
-def list_datasets(db: Database, datasets: Service, principal: CurrentPrincipal) -> dict[str, Any]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    return {"items": [repository_payload(db, item) for item in datasets.list_repositories()]}
+def list_datasets(db: Database, datasets: Service, principal: OptionalPrincipal) -> dict[str, Any]:
+    visible = [
+        item for item in datasets.list_repositories() if can_read_repository(item, principal)
+    ]
+    return {"items": [_repository_payload(db, item, principal) for item in visible]}
 
 
 @router.post("/datasets", response_model=DatasetRead, status_code=201)
 def create_dataset(
     body: DatasetCreate, db: Database, datasets: Service, principal: CurrentPrincipal
 ) -> dict[str, Any]:
-    authorize(principal, Role.contributor, Role.admin)
-    return repository_payload(db, datasets.create_repository(body))
+    require_scope(principal, "write")
+    repository = datasets.create_repository(body, principal.user_id)
+    return _repository_payload(db, repository, principal)
 
 
 @router.get("/datasets/{namespace}/{dataset}", response_model=DatasetRead)
 def read_dataset(
-    namespace: str, dataset: str, db: Database, principal: CurrentPrincipal
+    namespace: str, dataset: str, db: Database, principal: OptionalPrincipal
 ) -> dict[str, Any]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    return repository_payload(db, get_repository(db, namespace, dataset))
+    repository = _repository_for_read(db, namespace, dataset, principal)
+    return _repository_payload(db, repository, principal)
 
 
 @router.patch("/datasets/{namespace}/{dataset}", response_model=DatasetRead)
@@ -81,9 +150,22 @@ def patch_dataset(
     datasets: Service,
     principal: CurrentPrincipal,
 ) -> dict[str, Any]:
-    authorize(principal, Role.admin)
+    _repository_for_write(db, namespace, dataset, principal)
     repository = datasets.patch_repository(namespace, dataset, body)
-    return repository_payload(db, repository)
+    return _repository_payload(db, repository, principal)
+
+
+@router.delete("/datasets/{namespace}/{dataset}", status_code=204)
+def delete_dataset(
+    namespace: str,
+    dataset: str,
+    db: Database,
+    datasets: Service,
+    principal: CurrentPrincipal,
+) -> Response:
+    _repository_for_write(db, namespace, dataset, principal)
+    datasets.delete_repository(namespace, dataset)
+    return Response(status_code=204)
 
 
 @router.post("/datasets/{namespace}/{dataset}/uploads", response_model=UploadRead, status_code=201)
@@ -91,10 +173,11 @@ def create_upload(
     namespace: str,
     dataset: str,
     body: UploadCreate,
+    db: Database,
     datasets: Service,
     principal: CurrentPrincipal,
 ) -> UploadRead:
-    authorize(principal, Role.contributor, Role.admin)
+    _repository_for_write(db, namespace, dataset, principal)
     return UploadRead.model_validate(
         datasets.create_upload(namespace, dataset, body.commit_message)
     )
@@ -108,7 +191,7 @@ async def upload_files(
     files: Annotated[list[UploadFile], File(description="Repository files")],
     paths: Annotated[list[str], Form(description="POSIX path corresponding to each file")],
 ) -> UploadFilesResult:
-    authorize(principal, Role.contributor, Role.admin)
+    authorize_repository_write(datasets.get_upload_repository(upload_id), principal)
     accepted = await datasets.add_files(upload_id, files, paths)
     upload = datasets.get_upload(upload_id)
     return UploadFilesResult(
@@ -122,25 +205,28 @@ def complete_upload(
     body: UploadComplete,
     datasets: Service,
     principal: CurrentPrincipal,
-) -> RevisionRead:
-    authorize(principal, Role.contributor, Role.admin)
-    return RevisionRead.model_validate(
-        datasets.complete_upload(upload_id, body.expected_file_count)
+    include_files: bool = True,
+) -> dict[str, Any]:
+    authorize_repository_write(datasets.get_upload_repository(upload_id), principal)
+    revision = datasets.complete_upload(
+        upload_id,
+        body.expected_file_count,
+        include_files=include_files,
     )
+    return _revision_payload(revision, include_files=include_files)
 
 
 @router.get("/uploads/{upload_id}", response_model=UploadRead)
 def read_upload(upload_id: str, datasets: Service, principal: CurrentPrincipal) -> UploadRead:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
+    authorize_repository_write(datasets.get_upload_repository(upload_id), principal)
     return UploadRead.model_validate(datasets.get_upload(upload_id))
 
 
 @router.get("/datasets/{namespace}/{dataset}/revisions", response_model=list[RevisionSummary])
 def list_revisions(
-    namespace: str, dataset: str, db: Database, principal: CurrentPrincipal
+    namespace: str, dataset: str, db: Database, principal: OptionalPrincipal
 ) -> list[DatasetRevision]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    repository = get_repository(db, namespace, dataset)
+    repository = _repository_for_read(db, namespace, dataset, principal)
     return list(
         db.scalars(
             select(DatasetRevision)
@@ -152,19 +238,48 @@ def list_revisions(
 
 @router.get("/datasets/{namespace}/{dataset}/revisions/{revision}", response_model=RevisionRead)
 def read_revision(
-    namespace: str, dataset: str, revision: str, db: Database, principal: CurrentPrincipal
-) -> DatasetRevision:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    repository = get_repository(db, namespace, dataset)
-    return resolve_revision(db, repository, revision)
+    namespace: str,
+    dataset: str,
+    revision: str,
+    db: Database,
+    principal: OptionalPrincipal,
+    include_files: bool = True,
+) -> dict[str, Any]:
+    repository = _repository_for_read(db, namespace, dataset, principal)
+    resolved = resolve_revision(db, repository, revision, include_files=include_files)
+    return _revision_payload(resolved, include_files=include_files)
+
+
+@router.get("/datasets/{namespace}/{dataset}/tree/{revision}/page", response_model=FilePage)
+def read_tree_page(
+    namespace: str,
+    dataset: str,
+    revision: str,
+    db: Database,
+    datasets: Service,
+    principal: OptionalPrincipal,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    search: str | None = None,
+) -> dict[str, Any]:
+    _repository_for_read(db, namespace, dataset, principal)
+    items, total = datasets.list_files(
+        namespace,
+        dataset,
+        revision,
+        offset=offset,
+        limit=limit,
+        search=search,
+    )
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
 
 
 @router.get("/datasets/{namespace}/{dataset}/tree/{revision}", response_model=list[dict[str, Any]])
 def read_tree(
-    namespace: str, dataset: str, revision: str, db: Database, principal: CurrentPrincipal
+    namespace: str, dataset: str, revision: str, db: Database, principal: OptionalPrincipal
 ) -> list[dict[str, Any]]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    resolved = resolve_revision(db, get_repository(db, namespace, dataset), revision)
+    repository = _repository_for_read(db, namespace, dataset, principal)
+    resolved = resolve_revision(db, repository, revision)
     return [
         {
             "path": file.path,
@@ -185,15 +300,12 @@ def download_blob(
     path: str,
     request: Request,
     db: Database,
-    principal: CurrentPrincipal,
+    datasets: Service,
+    principal: OptionalPrincipal,
     inline: bool = False,
 ) -> StreamingResponse:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    normalized = normalize_repository_path(path)
-    resolved = resolve_revision(db, get_repository(db, namespace, dataset), revision)
-    repository_file = next((file for file in resolved.files if file.path == normalized), None)
-    if repository_file is None:
-        raise NotFoundError(f"File {normalized}")
+    _repository_for_read(db, namespace, dataset, principal)
+    repository_file = datasets.get_file(namespace, dataset, revision, path)
     storage: ObjectStorage = request.app.state.storage
     return StreamingResponse(
         storage.iter_object(repository_file.storage_object_key),
@@ -201,7 +313,7 @@ def download_blob(
         headers={
             "Content-Disposition": (
                 f"{'inline' if inline else 'attachment'}; "
-                f'filename="{normalized.rsplit("/", 1)[-1]}"'
+                f'filename="{repository_file.path.rsplit("/", 1)[-1]}"'
             )
         },
     )
@@ -212,11 +324,11 @@ def list_configs(
     namespace: str,
     dataset: str,
     db: Database,
-    principal: CurrentPrincipal,
+    principal: OptionalPrincipal,
     revision: str = "main",
 ) -> list[DatasetConfig]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
-    resolved = resolve_revision(db, get_repository(db, namespace, dataset), revision)
+    repository = _repository_for_read(db, namespace, dataset, principal)
+    resolved = resolve_revision(db, repository, revision, include_files=False)
     return resolved.configs
 
 
@@ -229,7 +341,7 @@ def _resolve_split(
     split_name: str,
 ) -> tuple[DatasetRevision, DatasetSplit]:
     repository = get_repository(db, namespace, dataset)
-    resolved = resolve_revision(db, repository, revision)
+    resolved = resolve_revision(db, repository, revision, include_files=False)
     statement = (
         select(DatasetSplit)
         .join(DatasetConfig)
@@ -256,14 +368,14 @@ def viewer(
     config_name: str,
     split_name: str,
     db: Database,
-    principal: CurrentPrincipal,
+    principal: OptionalPrincipal,
     revision: str = "main",
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     columns: str | None = None,
     filter_: Annotated[str | None, Query(alias="filter")] = None,
 ) -> ViewerResponse:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
+    _repository_for_read(db, namespace, dataset, principal)
     resolved, split = _resolve_split(db, namespace, dataset, revision, config_name, split_name)
     filtered = apply_viewer_filter(split.preview_json, filter_)
     selected = [column for column in columns.split(",") if column] if columns else None
@@ -278,6 +390,7 @@ def viewer(
         offset=offset,
         limit=limit,
         total_rows=split.num_rows,
+        available_rows=len(filtered),
         rows=rows,
         schema_=split.schema_json,
         capabilities={
@@ -297,10 +410,10 @@ def statistics(
     config_name: str,
     split_name: str,
     db: Database,
-    principal: CurrentPrincipal,
+    principal: OptionalPrincipal,
     revision: str = "main",
 ) -> dict[str, Any]:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
+    _repository_for_read(db, namespace, dataset, principal)
     resolved, split = _resolve_split(db, namespace, dataset, revision, config_name, split_name)
     return {
         "repository": f"{namespace}/{dataset}",
@@ -313,8 +426,11 @@ def statistics(
 
 @router.get("/jobs/{job_id}", response_model=JobRead)
 def read_job(job_id: str, db: Database, principal: CurrentPrincipal) -> ProcessingJob:
-    authorize(principal, Role.reader, Role.contributor, Role.admin)
     job = db.get(ProcessingJob, job_id)
     if job is None:
         raise NotFoundError(f"Job {job_id}")
+    repository = db.get(DatasetRepository, job.repository_id)
+    if repository is None:
+        raise NotFoundError("Job repository")
+    authorize_repository_read(repository, principal)
     return job

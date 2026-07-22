@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     max_file_count: int = Field(default=10_000, ge=0)
     preview_rows: int = Field(default=100, ge=1, le=1_000)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    auth_secret_key: str = "development-only-change-me"
+    auth_session_ttl_seconds: int = Field(default=7 * 24 * 60 * 60, ge=300)
+    auth_cookie_secure: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

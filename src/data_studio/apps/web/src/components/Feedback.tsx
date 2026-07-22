@@ -2,9 +2,11 @@ import { AlertTriangle, DatabaseZap, LoaderCircle } from "lucide-react";
 
 export function LoadingState({ label = "Loading dataset…" }: { label?: string }) {
   return (
-    <div className="grid min-h-64 place-items-center rounded-3xl border border-dashed border-slate-200 bg-white/60">
+    <div className="grid min-h-64 place-items-center rounded-3xl border border-dashed border-slate-300/80 bg-white/70 shadow-sm shadow-slate-900/5">
       <div className="flex flex-col items-center gap-3 text-sm font-medium text-slate-500">
-        <LoaderCircle className="size-6 animate-spin text-teal-700" aria-hidden="true" />
+        <span className="grid size-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
+          <LoaderCircle className="size-6 animate-spin" aria-hidden="true" />
+        </span>
         {label}
       </div>
     </div>
@@ -13,7 +15,7 @@ export function LoadingState({ label = "Loading dataset…" }: { label?: string 
 
 export function ErrorState({ message, retry }: { message: string; retry?: () => void }) {
   return (
-    <div className="rounded-3xl border border-rose-200 bg-rose-50 p-7 text-rose-950">
+    <div className="rounded-3xl border border-rose-200 bg-rose-50/80 p-7 text-rose-950 shadow-sm">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
         <div>
@@ -40,9 +42,9 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="grid min-h-72 place-items-center rounded-3xl border border-dashed border-slate-300 bg-white/70 px-6 text-center">
+    <div className="grid min-h-72 place-items-center rounded-3xl border border-dashed border-slate-300 bg-white/75 px-6 text-center shadow-sm shadow-slate-900/5">
       <div className="max-w-md">
-        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-teal-50 text-teal-800">
+        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
           <DatabaseZap className="size-6" aria-hidden="true" />
         </div>
         <h2 className="mt-4 text-lg font-semibold text-slate-950">{title}</h2>
@@ -52,4 +54,3 @@ export function EmptyState({
     </div>
   );
 }
-

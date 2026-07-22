@@ -4,7 +4,10 @@ import {
   Braces,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Database,
+  Download,
   File,
   FileArchive,
   Files,
@@ -13,12 +16,15 @@ import {
   Globe2,
   LockKeyhole,
   Search,
+  Save,
   Settings,
   Shield,
   Table2,
+  Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Link,
   NavLink,
@@ -31,6 +37,8 @@ import {
 } from "react-router-dom";
 
 import { api } from "../api";
+import { AccountControls } from "../components/Auth";
+import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { DataTable } from "../components/DataTable";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
@@ -38,6 +46,7 @@ import { UploadDialog } from "../components/UploadDialog";
 import type {
   Dataset,
   DatasetConfig,
+  FilePage,
   Revision,
   RevisionSummary,
   ViewerResponse,
@@ -94,7 +103,15 @@ function SelectionControls({
   );
 }
 
-function CardTab({ revision, openUpload }: { revision: Revision; openUpload: () => void }) {
+function CardTab({
+  revision,
+  openUpload,
+  canEdit,
+}: {
+  revision: Revision;
+  openUpload: () => void;
+  canEdit: boolean;
+}) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
       <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm lg:p-10">
@@ -104,7 +121,7 @@ function CardTab({ revision, openUpload }: { revision: Revision; openUpload: () 
           <EmptyState
             title="This dataset has no card yet"
             description="Add a README.md to the repository root and publish another revision. YAML front matter is supported."
-            action={<button className="button-primary" type="button" onClick={openUpload}><UploadCloud className="size-4" /> Upload revision</button>}
+            action={canEdit ? <button className="button-primary" type="button" onClick={openUpload}><UploadCloud className="size-4" /> Upload revision</button> : undefined}
           />
         )}
       </article>
@@ -127,7 +144,7 @@ function CardTab({ revision, openUpload }: { revision: Revision; openUpload: () 
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="eyebrow">Revision</p>
-          <p className="mt-3 font-mono text-sm font-semibold text-teal-800">{revision.revision_id}</p>
+          <p className="mt-3 font-mono text-sm font-semibold text-indigo-700">{revision.revision_id}</p>
           <p className="mt-2 text-xs leading-5 text-slate-500">{revision.commit_message}</p>
           <div className="mt-4 flex items-center gap-2 text-xs font-medium text-emerald-700">
             <CheckCircle2 className="size-4" /> Ready to browse
@@ -158,11 +175,36 @@ function ViewerTab({
   const [filterValue, setFilterValue] = useState("");
   const selectedConfig = revision.configs.find((item) => item.name === configName) ?? revision.configs[0];
   const selectedSplit = selectedConfig?.splits.find((item) => item.name === splitName) ?? selectedConfig?.splits[0];
-  const offset = Number(searchParams.get("offset") ?? 0);
+  const routeSelectionValid = revision.configs.some(
+    (config) => config.name === configName && config.splits.some((split) => split.name === splitName),
+  );
+  const rawOffset = Number(searchParams.get("offset") ?? 0);
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
   const filter = searchParams.get("filter") ?? undefined;
+  const limit = 50;
+  const activeFilter = useMemo(() => {
+    if (!filter) return null;
+    try {
+      const parsed = JSON.parse(filter) as { column?: unknown; value?: unknown };
+      if (typeof parsed.column === "string" && typeof parsed.value === "string") {
+        return { column: parsed.column, value: parsed.value };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }, [filter]);
+  const normalizedFilter = activeFilter && selectedSplit?.schema.some((field) => field.name === activeFilter.column)
+    ? JSON.stringify({ column: activeFilter.column, op: "contains", value: activeFilter.value })
+    : undefined;
 
   useEffect(() => {
-    if (!configName || !splitName) {
+    setFilterColumn(activeFilter?.column ?? "");
+    setFilterValue(activeFilter?.value ?? "");
+  }, [activeFilter]);
+
+  useEffect(() => {
+    if (!routeSelectionValid) {
       const firstConfig = revision.configs[0];
       const firstSplit = firstConfig?.splits[0];
       if (firstConfig && firstSplit) {
@@ -172,7 +214,7 @@ function ViewerTab({
         );
       }
     }
-  }, [basePath, configName, navigate, revision, splitName]);
+  }, [basePath, navigate, revision, routeSelectionValid]);
 
   useEffect(() => {
     if (!selectedConfig || !selectedSplit) return;
@@ -181,12 +223,12 @@ function ViewerTab({
     void api.viewer(namespace, dataset, selectedConfig.name, selectedSplit.name, {
       revision: revision.revision_id,
       offset,
-      limit: 100,
-      filter,
+      limit,
+      filter: normalizedFilter,
     }).then(setViewer).catch((caught: unknown) => {
       setError(caught instanceof Error ? caught.message : "Could not load preview rows.");
     });
-  }, [dataset, filter, namespace, offset, revision.revision_id, selectedConfig, selectedSplit]);
+  }, [dataset, namespace, normalizedFilter, offset, revision.revision_id, selectedConfig, selectedSplit]);
 
   if (!revision.configs.length) {
     return <EmptyState title="No previewable data found" description="The repository is preserved, but no supported tabular files or ImageFolder layout were detected." />;
@@ -198,7 +240,8 @@ function ViewerTab({
       `${basePath}/viewer/${encodeURIComponent(config)}/${encodeURIComponent(split)}?revision=${revision.revision_id}`,
     );
   };
-  const applyFilter = () => {
+  const applyFilter = (event?: FormEvent) => {
+    event?.preventDefault();
     const next = new URLSearchParams(searchParams);
     next.set("revision", revision.revision_id);
     next.set("offset", "0");
@@ -209,22 +252,39 @@ function ViewerTab({
     }
     setSearchParams(next);
   };
+  const clearFilter = () => {
+    setFilterColumn("");
+    setFilterValue("");
+    const next = new URLSearchParams(searchParams);
+    next.set("revision", revision.revision_id);
+    next.set("offset", "0");
+    next.delete("filter");
+    setSearchParams(next);
+  };
+  const changePage = (nextOffset: number) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("revision", revision.revision_id);
+    next.set("offset", String(Math.max(0, nextOffset)));
+    setSearchParams(next);
+  };
+  const canGoNext = Boolean(viewer && offset + viewer.rows.length < viewer.available_rows);
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="surface-panel flex flex-wrap items-end justify-between gap-4 p-4">
         <SelectionControls configs={revision.configs} configName={selectedConfig.name} splitName={selectedSplit.name} onChange={changeSelection} />
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="relative">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-            <input className="field-input w-56 pl-9" placeholder="Filter value" value={filterValue} onChange={(event) => setFilterValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") applyFilter(); }} />
-          </label>
-          <select className="field-input w-44" value={filterColumn} onChange={(event) => setFilterColumn(event.target.value)} aria-label="Filter column">
+        <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => applyFilter(event)}>
+          <select className="field-input mt-0 w-44" value={filterColumn} onChange={(event) => setFilterColumn(event.target.value)} aria-label="Filter column">
             <option value="">Choose column</option>
             {selectedSplit.schema.map((field) => <option key={field.name}>{field.name}</option>)}
           </select>
-          <button className="button-secondary" type="button" onClick={applyFilter}><Filter className="size-4" /> Filter</button>
-        </div>
+          <label className="relative">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+            <input className="field-input mt-0 w-56 pl-9" placeholder="Contains value…" value={filterValue} onChange={(event) => setFilterValue(event.target.value)} />
+          </label>
+          <button className="button-secondary" type="submit"><Filter className="size-4" /> Filter</button>
+          {filter ? <button className="icon-button" type="button" onClick={clearFilter} aria-label="Clear filter"><X className="size-4" /></button> : null}
+        </form>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
         <p>
@@ -232,44 +292,120 @@ function ViewerTab({
           <span className="mx-2">·</span>{formatBytes(selectedSplit.num_bytes)}
           <span className="mx-2">·</span>{selectedSplit.schema.length} columns
         </p>
-        <p>Preview is bounded to the indexed sample for this revision.</p>
+        <p>
+          {viewer ? `${viewer.available_rows.toLocaleString()} indexed rows available` : "Reading indexed preview…"}
+          {filter ? " for this filter" : ""}
+        </p>
       </div>
       <div className="mt-4">
         {error ? <ErrorState message={error} /> : null}
         {!error && !viewer ? <LoadingState label="Reading immutable preview…" /> : null}
-        {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty, the bounded preview ended, or the current filter has no matches." /> : null}
-        {viewer?.rows.length ? <DataTable rows={viewer.rows} schema={viewer.schema} namespace={namespace} dataset={dataset} revision={revision.revision_id} /> : null}
+        {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty, the indexed preview ended, or the current filter has no matches." /> : null}
+        {viewer?.rows.length ? <DataTable rows={viewer.rows} schema={viewer.schema} namespace={namespace} dataset={dataset} revision={revision.revision_id} rowOffset={offset} /> : null}
+        {viewer ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+            <p>
+              Showing <span className="font-semibold text-slate-800">{viewer.rows.length ? offset + 1 : 0}–{offset + viewer.rows.length}</span> of {viewer.available_rows.toLocaleString()} indexed rows
+            </p>
+            <div className="flex gap-2">
+              <button className="button-secondary min-h-9 px-3" type="button" disabled={offset === 0} onClick={() => changePage(offset - limit)}><ChevronLeft className="size-4" /> Previous</button>
+              <button className="button-secondary min-h-9 px-3" type="button" disabled={!canGoNext} onClick={() => changePage(offset + limit)}>Next <ChevronRight className="size-4" /></button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
 function FilesTab({ namespace, dataset, revision }: { namespace: string; dataset: string; revision: Revision }) {
+  const pageSize = 100;
+  const [page, setPage] = useState<FilePage | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setOffset(0);
+    setQuery("");
+    setSearch("");
+  }, [revision.revision_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPage(null);
+    setError("");
+    void api.filePage(namespace, dataset, revision.revision_id, {
+      offset,
+      limit: pageSize,
+      search,
+    }).then((nextPage) => {
+      if (!cancelled) setPage(nextPage);
+    }).catch((caught: unknown) => {
+      if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load repository files.");
+    });
+    return () => { cancelled = true; };
+  }, [dataset, namespace, offset, revision.revision_id, search]);
+
+  const findFiles = (event: FormEvent) => {
+    event.preventDefault();
+    setOffset(0);
+    setSearch(query.trim());
+  };
+  const clearSearch = () => {
+    setQuery("");
+    setSearch("");
+    setOffset(0);
+  };
+
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+    <div className="surface-panel overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
         <div>
           <h2 className="font-semibold text-slate-950">Repository files</h2>
           <p className="mt-1 text-xs text-slate-500">Original paths and bytes preserved at revision {revision.revision_id}.</p>
         </div>
-        <span className="status-pill">{revision.files.length} files</span>
+        <form className="flex w-full max-w-sm gap-2" onSubmit={findFiles}>
+          <label className="relative min-w-0 flex-1">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+            <input className="field-input pl-9" type="search" placeholder="Search file paths" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          {search ? <button className="icon-button mt-1" type="button" onClick={clearSearch} aria-label="Clear file search"><X className="size-4" /></button> : null}
+          <button className="button-secondary mt-1" type="submit">Search</button>
+        </form>
       </div>
-      <div className="divide-y divide-slate-100">
-        {revision.files.map((file) => (
+      {error ? <div className="p-5"><ErrorState message={error} /></div> : null}
+      {!error && !page ? <div className="p-5"><LoadingState label="Loading repository files…" /></div> : null}
+      {page && !page.items.length ? <div className="p-5"><EmptyState title="No matching files" description={search ? `No paths contain “${search}”.` : "This revision does not contain files."} /></div> : null}
+      {page?.items.length ? <div className="overflow-x-auto"><div className="min-w-[680px] divide-y divide-slate-100">
+        {page.items.map((file) => (
           <a
-            className="group grid grid-cols-[minmax(0,1fr)_100px_100px] items-center gap-4 px-6 py-3 text-sm hover:bg-amber-50/50"
+            className="group grid grid-cols-[minmax(0,1fr)_100px_100px_32px] items-center gap-4 px-6 py-3 text-sm transition-colors hover:bg-indigo-50/45"
             href={api.blobUrl(namespace, dataset, revision.revision_id, file.path)}
             key={file.path}
           >
             <span className="flex min-w-0 items-center gap-3 font-medium text-slate-800">
-              {file.path.endsWith(".parquet") ? <FileArchive className="size-4 shrink-0 text-violet-600" /> : <File className="size-4 shrink-0 text-teal-700" />}
-              <span className="truncate group-hover:text-teal-800">{file.path}</span>
+              {file.path.endsWith(".parquet") ? <FileArchive className="size-4 shrink-0 text-violet-600" /> : <File className="size-4 shrink-0 text-indigo-500" />}
+              <span className="truncate group-hover:text-indigo-700">{file.path}</span>
             </span>
             <span className="text-right text-xs text-slate-500">{file.media_type.split("/").at(-1)}</span>
             <span className="text-right font-mono text-xs text-slate-500">{formatBytes(file.size_bytes)}</span>
+            <Download className="size-4 text-slate-300 transition group-hover:text-indigo-600" />
           </a>
         ))}
-      </div>
+      </div></div> : null}
+      {page ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-6 py-4 text-xs text-slate-500">
+          <p>
+            Showing <span className="font-semibold text-slate-800">{page.items.length ? page.offset + 1 : 0}–{page.offset + page.items.length}</span> of {page.total.toLocaleString()} files
+          </p>
+          <div className="flex gap-2">
+            <button className="button-secondary min-h-9 px-3" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ChevronLeft className="size-4" /> Previous</button>
+            <button className="button-secondary min-h-9 px-3" type="button" disabled={offset + page.items.length >= page.total} onClick={() => setOffset(offset + pageSize)}>Next <ChevronRight className="size-4" /></button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -365,9 +501,9 @@ function VersionsTab({ revisions, selected }: { revisions: RevisionSummary[]; se
             key={revision.revision_id}
             onClick={() => { const next = new URLSearchParams(params); next.set("revision", revision.revision_id); setParams(next); }}
           >
-            <span className={`absolute top-1 -left-[2.15rem] size-3 rounded-full border-2 border-white ${revision.revision_id === selected ? "bg-teal-700 ring-4 ring-teal-100" : "bg-slate-300"}`} />
+            <span className={`absolute top-1 -left-[2.15rem] size-3 rounded-full border-2 border-white ${revision.revision_id === selected ? "bg-indigo-600 ring-4 ring-indigo-100" : "bg-slate-300"}`} />
             <span className="flex flex-wrap items-center gap-3">
-              <code className="font-semibold text-teal-800">{revision.revision_id}</code>
+              <code className="font-semibold text-indigo-700">{revision.revision_id}</code>
               <span className="status-pill">{revision.status}</span>
               <span className="text-xs text-slate-400">{new Date(revision.created_at).toLocaleString()}</span>
             </span>
@@ -379,22 +515,101 @@ function VersionsTab({ revisions, selected }: { revisions: RevisionSummary[]; se
   );
 }
 
-function SettingsTab({ dataset }: { dataset: Dataset }) {
+function SettingsTab({
+  dataset,
+  onUpdated,
+  onDeleted,
+}: {
+  dataset: Dataset;
+  onUpdated: (dataset: Dataset) => void;
+  onDeleted: () => void;
+}) {
+  const [description, setDescription] = useState(dataset.description);
+  const [visibility, setVisibility] = useState(dataset.visibility);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await api.updateDataset(dataset.namespace, dataset.slug, {
+        description,
+        visibility,
+      });
+      onUpdated(updated);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update the dataset.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (confirmation !== dataset.slug) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.deleteDataset(dataset.namespace, dataset.slug);
+      onDeleted();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete the dataset.");
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
-        <div className="flex items-center gap-3"><Shield className="size-5 text-teal-800" /><h2 className="font-semibold">Repository access</h2></div>
-        <dl className="mt-5 space-y-4 text-sm">
-          <div className="flex justify-between"><dt className="text-slate-500">Visibility</dt><dd className="font-semibold capitalize">{dataset.visibility}</dd></div>
-          <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>
-          <div className="flex justify-between"><dt className="text-slate-500">Authorization</dt><dd>Role-based</dd></div>
-        </dl>
+      <section className="surface-panel p-6">
+        <div className="flex items-center gap-3"><Shield className="size-5 text-indigo-600" /><h2 className="font-semibold">Repository access</h2></div>
+        {dataset.can_edit ? (
+          <form className="mt-5 space-y-4" onSubmit={(event) => void save(event)}>
+            <label className="field-label">
+              Description
+              <textarea className="field-input min-h-24 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />
+            </label>
+            <label className="field-label">
+              Visibility
+              <select className="field-input" value={visibility} onChange={(event) => setVisibility(event.target.value as Dataset["visibility"])}>
+                <option value="private">Private — owner only</option>
+                <option value="internal">Internal — signed-in users</option>
+                <option value="public">Public — everyone</option>
+              </select>
+            </label>
+            {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
+            <button className="button-primary" type="submit" disabled={saving}><Save className="size-4" /> {saving ? "Saving…" : "Save changes"}</button>
+          </form>
+        ) : (
+          <dl className="mt-5 space-y-4 text-sm">
+            <div className="flex justify-between"><dt className="text-slate-500">Owner</dt><dd className="font-semibold">{dataset.owner ?? "Legacy repository"}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Visibility</dt><dd className="font-semibold capitalize">{dataset.visibility}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>
+          </dl>
+        )}
       </section>
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
-        <div className="flex items-center gap-3"><Globe2 className="size-5 text-teal-800" /><h2 className="font-semibold">Compatibility contract</h2></div>
+      <section className="surface-panel p-6">
+        <div className="flex items-center gap-3"><Globe2 className="size-5 text-indigo-600" /><h2 className="font-semibold">Compatibility contract</h2></div>
         <p className="mt-4 text-sm leading-6 text-slate-600">Folder uploads preserve relative paths and understand Dataset Card YAML, declarative configs, conventional splits, sharded filenames, and ImageFolder layouts.</p>
         <p className="mt-3 text-xs leading-5 text-slate-500">Full huggingface_hub protocol compatibility is intentionally not claimed by this release.</p>
       </section>
+      {dataset.can_edit ? (
+        <section className="rounded-3xl border border-rose-200 bg-rose-50/60 p-6 lg:col-span-2">
+          <div className="flex items-center gap-3 text-rose-800"><Trash2 className="size-5" /><h2 className="font-semibold">Delete dataset</h2></div>
+          <p className="mt-3 text-sm leading-6 text-rose-800/80">This permanently removes repository metadata, revisions, previews, and file records. Type <strong>{dataset.slug}</strong> to confirm.</p>
+          {!deleting ? (
+            <button className="button-secondary mt-4 border-rose-200 text-rose-700 hover:bg-rose-100" type="button" onClick={() => setDeleting(true)}><Trash2 className="size-4" /> Delete dataset</button>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <input className="field-input mt-0 max-w-xs" aria-label="Confirm dataset name" placeholder={dataset.slug} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+              <button className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50" type="button" disabled={saving || confirmation !== dataset.slug} onClick={() => void remove()}><Trash2 className="size-4" /> Permanently delete</button>
+              <button className="button-secondary" type="button" onClick={() => { setDeleting(false); setConfirmation(""); }}>Cancel</button>
+            </div>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -411,32 +626,43 @@ const tabs = [
 
 export function DatasetWorkspace() {
   const { namespace = "", dataset = "" } = useParams();
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [params, setParams] = useSearchParams();
   const [repository, setRepository] = useState<Dataset | null>(null);
   const [revision, setRevision] = useState<Revision | null>(null);
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [revisionError, setRevisionError] = useState("");
+  const [revisionReload, setRevisionReload] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const selectedRevision = params.get("revision") ?? repository?.latest_revision?.revision_id;
   const basePath = `/datasets/${namespace}/${dataset}`;
 
-  const reloadRepository = () => {
+  const reloadRepository = useCallback(() => {
     setLoading(true); setError("");
     void Promise.all([api.dataset(namespace, dataset), api.revisions(namespace, dataset)])
       .then(([nextRepository, nextRevisions]) => { setRepository(nextRepository); setRevisions(nextRevisions); })
       .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Could not load dataset."))
       .finally(() => setLoading(false));
-  };
-  useEffect(reloadRepository, [dataset, namespace]);
+  }, [dataset, namespace]);
+  useEffect(() => {
+    if (!authLoading) reloadRepository();
+  }, [authLoading, reloadRepository, user?.id]);
 
   useEffect(() => {
-    if (!selectedRevision) { setRevision(null); return; }
+    if (!selectedRevision) { setRevision(null); setRevisionError(""); return; }
+    let cancelled = false;
     setRevision(null);
-    void api.revision(namespace, dataset, selectedRevision).then(setRevision).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : "Could not load revision.");
+    setRevisionError("");
+    void api.revision(namespace, dataset, selectedRevision).then((nextRevision) => {
+      if (!cancelled) setRevision(nextRevision);
+    }).catch((caught: unknown) => {
+      if (!cancelled) setRevisionError(caught instanceof Error ? caught.message : "Could not load revision.");
     });
-  }, [dataset, namespace, selectedRevision]);
+    return () => { cancelled = true; };
+  }, [dataset, namespace, revisionReload, selectedRevision]);
 
   const selectedParams = useMemo(() => {
     const next = new URLSearchParams(params);
@@ -444,33 +670,58 @@ export function DatasetWorkspace() {
     return next;
   }, [params, selectedRevision]);
 
-  if (loading) return <div className="mx-auto max-w-7xl p-6"><LoadingState /></div>;
+  if (loading || authLoading) return <div className="mx-auto max-w-7xl p-6"><LoadingState /></div>;
   if (error || !repository) return <div className="mx-auto max-w-5xl p-6"><ErrorState message={error || "Dataset not found."} retry={reloadRepository} /></div>;
 
   const changeRevision = (value: string) => {
-    const next = new URLSearchParams(params); next.set("revision", value); setParams(next);
+    const next = new URLSearchParams(params);
+    next.set("revision", value);
+    next.delete("offset");
+    next.delete("filter");
+    setParams(next);
   };
+
+  const splitCount = revision?.configs.reduce((total, config) => total + config.splits.length, 0) ?? 0;
+  const totalRows = revision?.configs.reduce(
+    (total, config) => total + config.splits.reduce((splitTotal, split) => splitTotal + (split.num_rows ?? 0), 0),
+    0,
+  ) ?? 0;
+  const totalBytes = revision?.configs.reduce(
+    (total, config) => total + config.splits.reduce((splitTotal, split) => splitTotal + split.num_bytes, 0),
+    0,
+  ) ?? 0;
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-[#fffefa]">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-6 py-3">
+      <header className="app-header sticky top-0 z-40">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-6 py-3.5">
           <Brand />
-          <Link className="text-xs font-semibold text-slate-500 hover:text-teal-800" to="/">All datasets</Link>
+          <div className="flex items-center gap-2">
+            <Link className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white" to="/"><ChevronLeft className="size-4" /> All datasets</Link>
+            <AccountControls />
+          </div>
         </div>
       </header>
       <main>
-        <section className="border-b border-slate-200 bg-white">
+        <section className="border-b border-slate-200 bg-white/90 shadow-sm shadow-slate-900/3">
           <div className="mx-auto max-w-[1500px] px-6 pt-8">
             <div className="flex flex-wrap items-start justify-between gap-6">
               <div className="flex items-start gap-4">
-                <span className="grid size-12 place-items-center rounded-2xl bg-teal-900 text-amber-200"><Database className="size-6" /></span>
+                <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-950/15"><Database className="size-6" /></span>
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                     <span>{namespace}</span><span>/</span><span className="status-pill"><LockKeyhole className="size-3" /> {repository.visibility}</span>
                   </div>
                   <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
                   <p className="mt-2 max-w-2xl text-sm text-slate-500">{repository.description || "No description yet."}</p>
+                  {revision ? (
+                    <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+                      <span><strong className="font-semibold text-slate-800">{revision.configs.length.toLocaleString()}</strong> subsets</span>
+                      <span><strong className="font-semibold text-slate-800">{splitCount.toLocaleString()}</strong> splits</span>
+                      <span><strong className="font-semibold text-slate-800">{totalRows.toLocaleString()}</strong> rows</span>
+                      <span><strong className="font-semibold text-slate-800">{formatBytes(totalBytes)}</strong> indexed</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -482,7 +733,7 @@ export function DatasetWorkspace() {
                     </select><ChevronDown className="size-3" />
                   </label>
                 ) : null}
-                <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button>
+                {repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
               </div>
             </div>
             <nav className="mt-8 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
@@ -491,7 +742,10 @@ export function DatasetWorkspace() {
                   className={({ isActive }) => `tab-link ${isActive ? "tab-link-active" : ""}`}
                   end={tab.end}
                   key={tab.to}
-                  to={{ pathname: tab.to, search: selectedParams.toString() }}
+                  to={{
+                    pathname: tab.to ? `${basePath}/${tab.to}` : basePath,
+                    search: selectedParams.toString(),
+                  }}
                 >
                   <tab.icon className="size-4" /> {tab.label}
                 </NavLink>
@@ -499,25 +753,29 @@ export function DatasetWorkspace() {
             </nav>
           </div>
         </section>
-        <section className="mx-auto max-w-[1500px] px-6 py-7">
-          {!revision ? (
-            <EmptyState title="No published revision" description="Upload a Hugging Face-compatible folder to create the first immutable revision." action={<button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload folder</button>} />
+        <section className="mx-auto max-w-[1500px] px-6 py-7 lg:py-8">
+          {revisionError ? (
+            <ErrorState message={revisionError} retry={() => setRevisionReload((value) => value + 1)} />
+          ) : selectedRevision && !revision ? (
+            <LoadingState label="Loading immutable revision…" />
+          ) : !revision ? (
+            <EmptyState title="No published revision" description={repository.can_edit ? "Upload a Hugging Face-compatible folder to create the first immutable revision." : "The owner has not published a revision yet."} action={repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload folder</button> : undefined} />
           ) : (
             <Routes>
-              <Route index element={<CardTab revision={revision} openUpload={() => setUploadOpen(true)} />} />
+              <Route index element={<CardTab revision={revision} openUpload={() => setUploadOpen(true)} canEdit={repository.can_edit} />} />
               <Route path="viewer" element={<ViewerTab namespace={namespace} dataset={dataset} revision={revision} basePath={basePath} />} />
               <Route path="viewer/:configName/:splitName" element={<ViewerTab namespace={namespace} dataset={dataset} revision={revision} basePath={basePath} />} />
               <Route path="files" element={<FilesTab namespace={namespace} dataset={dataset} revision={revision} />} />
               <Route path="schema" element={<SchemaTab revision={revision} />} />
               <Route path="statistics" element={<StatisticsTab namespace={namespace} dataset={dataset} revision={revision} />} />
               <Route path="versions" element={<VersionsTab revisions={revisions} selected={revision.revision_id} />} />
-              <Route path="settings" element={<SettingsTab dataset={repository} />} />
+              <Route path="settings" element={<SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />} />
               <Route path="*" element={<Navigate to={{ pathname: basePath, search: selectedParams.toString() }} replace />} />
             </Routes>
           )}
         </section>
       </main>
-      <UploadDialog namespace={namespace} dataset={dataset} open={uploadOpen} onClose={() => setUploadOpen(false)} onComplete={(nextRevision) => { setUploadOpen(false); setRevision(nextRevision); reloadRepository(); changeRevision(nextRevision.revision_id); }} />
+      {repository.can_edit ? <UploadDialog namespace={namespace} dataset={dataset} open={uploadOpen} onClose={() => setUploadOpen(false)} onComplete={(nextRevision) => { setUploadOpen(false); setRevision(nextRevision); reloadRepository(); changeRevision(nextRevision.revision_id); }} /> : null}
     </div>
   );
 }

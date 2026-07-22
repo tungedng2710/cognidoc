@@ -5,6 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models import RevisionStatus, UploadStatus, Visibility
 
+ApiTokenScope = Literal["read", "write"]
+
+
+def default_api_token_scopes() -> list[ApiTokenScope]:
+    return ["read", "write"]
+
 
 class OrmModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -37,6 +43,13 @@ class FileRead(OrmModel):
     sha256: str
     media_type: str
     is_previewable: bool
+
+
+class FilePage(BaseModel):
+    items: list[FileRead]
+    total: int
+    offset: int
+    limit: int
 
 
 class SplitRead(OrmModel):
@@ -84,7 +97,67 @@ class DatasetRead(OrmModel):
     default_branch: str
     created_at: datetime
     updated_at: datetime
+    owner: str | None = None
+    can_edit: bool = False
     latest_revision: RevisionSummary | None = None
+
+
+class UserRegister(BaseModel):
+    username: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")
+    display_name: str = Field(default="", max_length=120)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def plausible_email(cls, email: str | None) -> str | None:
+        if email is None:
+            return None
+        normalized = email.strip().lower()
+        if normalized.count("@") != 1 or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("email must be a valid address")
+        return normalized
+
+
+class UserLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class UserRead(OrmModel):
+    id: str
+    username: str
+    display_name: str
+    email: str | None
+    is_admin: bool
+    created_at: datetime
+
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    scopes: list[ApiTokenScope] = Field(default_factory=default_api_token_scopes)
+
+    @field_validator("scopes")
+    @classmethod
+    def valid_scopes(cls, scopes: list[ApiTokenScope]) -> list[ApiTokenScope]:
+        unique = list(dict.fromkeys(scopes))
+        if not unique:
+            raise ValueError("at least one scope is required")
+        return unique
+
+
+class ApiTokenRead(OrmModel):
+    id: str
+    name: str
+    token_prefix: str
+    scopes: list[str]
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
+
+
+class ApiTokenCreated(ApiTokenRead):
+    token: str
 
 
 class DatasetList(BaseModel):
@@ -127,6 +200,7 @@ class ViewerResponse(BaseModel):
     offset: int
     limit: int
     total_rows: int | None
+    available_rows: int
     rows: list[dict[str, Any]]
     schema_: list[dict[str, Any]] = Field(alias="schema", serialization_alias="schema")
     capabilities: dict[str, bool]

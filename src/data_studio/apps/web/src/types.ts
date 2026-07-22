@@ -21,7 +21,18 @@ export interface Dataset {
   default_branch: string;
   created_at: string;
   updated_at: string;
+  owner: string | null;
+  can_edit: boolean;
   latest_revision: RevisionSummary | null;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+  is_admin: boolean;
+  created_at: string;
 }
 
 export interface RepositoryFile {
@@ -30,6 +41,13 @@ export interface RepositoryFile {
   sha256: string;
   media_type: string;
   is_previewable: boolean;
+}
+
+export interface FilePage {
+  items: RepositoryFile[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export interface FieldSchema {
@@ -69,6 +87,7 @@ export interface ViewerResponse {
   offset: number;
   limit: number;
   total_rows: number | null;
+  available_rows: number;
   rows: Record<string, unknown>[];
   schema: FieldSchema[];
   capabilities: Record<string, boolean>;
@@ -80,4 +99,3 @@ export interface Problem {
   status: number;
   code: string;
 }
-

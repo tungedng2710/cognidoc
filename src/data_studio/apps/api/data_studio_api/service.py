@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
@@ -28,6 +28,7 @@ from .models import (
     RevisionStatus,
     UploadSession,
     UploadStatus,
+    User,
     utcnow,
 )
 from .schemas import DatasetCreate, DatasetPatch
@@ -47,17 +48,23 @@ def get_repository(db: Session, namespace: str, slug: str) -> DatasetRepository:
     return repository
 
 
-def get_revision(db: Session, repository: DatasetRepository, revision: str) -> DatasetRevision:
+def get_revision(
+    db: Session,
+    repository: DatasetRepository,
+    revision: str,
+    *,
+    include_files: bool = True,
+) -> DatasetRevision:
+    options = [selectinload(DatasetRevision.configs).selectinload(DatasetConfig.splits)]
+    if include_files:
+        options.append(selectinload(DatasetRevision.files))
     statement = (
         select(DatasetRevision)
         .where(
             DatasetRevision.repository_id == repository.id,
             DatasetRevision.revision_id == revision,
         )
-        .options(
-            selectinload(DatasetRevision.files),
-            selectinload(DatasetRevision.configs).selectinload(DatasetConfig.splits),
-        )
+        .options(*options)
     )
     result = db.scalar(statement)
     if result is None:
@@ -75,14 +82,18 @@ def latest_revision(db: Session, repository_id: str) -> DatasetRevision | None:
 
 
 def resolve_revision(
-    db: Session, repository: DatasetRepository, revision: str | None
+    db: Session,
+    repository: DatasetRepository,
+    revision: str | None,
+    *,
+    include_files: bool = True,
 ) -> DatasetRevision:
     if revision and revision not in {"main", "latest"}:
-        return get_revision(db, repository, revision)
+        return get_revision(db, repository, revision, include_files=include_files)
     result = latest_revision(db, repository.id)
     if result is None:
         raise NotFoundError("Latest revision")
-    return get_revision(db, repository, result.revision_id)
+    return get_revision(db, repository, result.revision_id, include_files=include_files)
 
 
 class DatasetService:
@@ -100,14 +111,36 @@ class DatasetService:
             )
         ).all()
 
-    def create_repository(self, data: DatasetCreate) -> DatasetRepository:
+    def create_repository(self, data: DatasetCreate, owner_id: str) -> DatasetRepository:
         if self.db.scalar(_repository_query(data.namespace, data.slug)):
             raise ConflictError(f"Dataset {data.namespace}/{data.slug} already exists.")
-        repository = DatasetRepository(**data.model_dump())
+        repository = DatasetRepository(owner_id=owner_id, **data.model_dump())
         self.db.add(repository)
         self.db.commit()
         self.db.refresh(repository)
         return repository
+
+    def delete_repository(self, namespace: str, slug: str) -> None:
+        repository = get_repository(self.db, namespace, slug)
+        revision_ids = select(DatasetRevision.id).where(
+            DatasetRevision.repository_id == repository.id
+        )
+        config_ids = select(DatasetConfig.id).where(DatasetConfig.revision_id.in_(revision_ids))
+        self.db.execute(delete(DatasetSplit).where(DatasetSplit.config_id.in_(config_ids)))
+        self.db.execute(delete(DatasetConfig).where(DatasetConfig.revision_id.in_(revision_ids)))
+        self.db.execute(delete(RepositoryFile).where(RepositoryFile.revision_id.in_(revision_ids)))
+        self.db.execute(
+            update(DatasetRevision)
+            .where(DatasetRevision.repository_id == repository.id)
+            .values(parent_revision_id=None)
+        )
+        self.db.execute(
+            delete(DatasetRevision).where(DatasetRevision.repository_id == repository.id)
+        )
+        self.db.execute(delete(UploadSession).where(UploadSession.repository_id == repository.id))
+        self.db.execute(delete(ProcessingJob).where(ProcessingJob.repository_id == repository.id))
+        self.db.execute(delete(DatasetRepository).where(DatasetRepository.id == repository.id))
+        self.db.commit()
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
@@ -117,6 +150,61 @@ class DatasetService:
         self.db.commit()
         self.db.refresh(repository)
         return repository
+
+    def list_files(
+        self,
+        namespace: str,
+        slug: str,
+        revision: str,
+        *,
+        offset: int,
+        limit: int,
+        search: str | None = None,
+    ) -> tuple[Sequence[RepositoryFile], int]:
+        resolved = resolve_revision(
+            self.db,
+            get_repository(self.db, namespace, slug),
+            revision,
+            include_files=False,
+        )
+        filters = [RepositoryFile.revision_id == resolved.id]
+        if search:
+            filters.append(RepositoryFile.path.icontains(search[:200], autoescape=True))
+        total = (
+            self.db.scalar(select(func.count()).select_from(RepositoryFile).where(*filters)) or 0
+        )
+        files = self.db.scalars(
+            select(RepositoryFile)
+            .where(*filters)
+            .order_by(RepositoryFile.path)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return files, total
+
+    def get_file(
+        self,
+        namespace: str,
+        slug: str,
+        revision: str,
+        path: str,
+    ) -> RepositoryFile:
+        normalized = normalize_repository_path(path)
+        resolved = resolve_revision(
+            self.db,
+            get_repository(self.db, namespace, slug),
+            revision,
+            include_files=False,
+        )
+        repository_file = self.db.scalar(
+            select(RepositoryFile).where(
+                RepositoryFile.revision_id == resolved.id,
+                RepositoryFile.path == normalized,
+            )
+        )
+        if repository_file is None:
+            raise NotFoundError(f"File {normalized}")
+        return repository_file
 
     def create_upload(self, namespace: str, slug: str, commit_message: str) -> UploadSession:
         repository = get_repository(self.db, namespace, slug)
@@ -132,6 +220,13 @@ class DatasetService:
         if upload is None:
             raise NotFoundError(f"Upload {upload_id}")
         return upload
+
+    def get_upload_repository(self, upload_id: str) -> DatasetRepository:
+        upload = self.get_upload(upload_id)
+        repository = self.db.get(DatasetRepository, upload.repository_id)
+        if repository is None:
+            raise NotFoundError("Upload repository")
+        return repository
 
     async def add_files(
         self, upload_id: str, files: list[UploadFile], paths: list[str]
@@ -296,14 +391,20 @@ class DatasetService:
         return latest if old_tree == new_tree else None
 
     def complete_upload(
-        self, upload_id: str, expected_file_count: int | None = None
+        self,
+        upload_id: str,
+        expected_file_count: int | None = None,
+        *,
+        include_files: bool = True,
     ) -> DatasetRevision:
         upload = self.get_upload(upload_id)
         if upload.status == UploadStatus.complete and upload.revision_id:
             repository = self.db.get(DatasetRepository, upload.repository_id)
             if repository is None:
                 raise NotFoundError("Upload repository")
-            return get_revision(self.db, repository, upload.revision_id)
+            return get_revision(
+                self.db, repository, upload.revision_id, include_files=include_files
+            )
         if upload.status != UploadStatus.open:
             raise ConflictError("Only an open upload can be completed.")
         if expected_file_count is not None and expected_file_count != upload.file_count:
@@ -347,7 +448,9 @@ class DatasetService:
                 job.progress = 1.0
                 job.finished_at = utcnow()
                 self.db.commit()
-                return get_revision(self.db, repository, unchanged.revision_id)
+                return get_revision(
+                    self.db, repository, unchanged.revision_id, include_files=include_files
+                )
 
             parent = latest_revision(self.db, repository.id)
             _, manifest_bytes, manifest_sha = build_manifest(
@@ -408,7 +511,7 @@ class DatasetService:
             job.finished_at = utcnow()
             self.db.commit()
             shutil.rmtree(self.settings.staging_root / upload.id, ignore_errors=True)
-            return get_revision(self.db, repository, revision_id)
+            return get_revision(self.db, repository, revision_id, include_files=include_files)
         except Exception as exc:
             self.db.rollback()
             failed_upload = self.db.get(UploadSession, upload_id)
@@ -470,8 +573,15 @@ class DatasetService:
                 )
 
 
-def repository_payload(db: Session, repository: DatasetRepository) -> dict[str, Any]:
+def repository_payload(
+    db: Session,
+    repository: DatasetRepository,
+    *,
+    viewer_id: str | None = None,
+    viewer_is_admin: bool = False,
+) -> dict[str, Any]:
     latest = latest_revision(db, repository.id)
+    owner = db.get(User, repository.owner_id) if repository.owner_id else None
     return {
         "id": repository.id,
         "namespace": repository.namespace,
@@ -481,6 +591,8 @@ def repository_payload(db: Session, repository: DatasetRepository) -> dict[str, 
         "default_branch": repository.default_branch,
         "created_at": repository.created_at,
         "updated_at": repository.updated_at,
+        "owner": owner.username if owner else None,
+        "can_edit": bool(viewer_id and (viewer_is_admin or repository.owner_id == viewer_id)),
         "latest_revision": latest,
     }
 

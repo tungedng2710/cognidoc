@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .auth_routes import router as auth_router
 from .config import get_settings
 from .database import init_db
 from .errors import StudioError
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": "0.1.0"}
 
+    app.include_router(auth_router)
     app.include_router(router)
     return app
 

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,16 +8,97 @@ describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ items: [] }),
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith("/auth/me")) {
+          return Promise.resolve({
+            ok: false,
+            status: 401,
+            statusText: "Unauthorized",
+            json: () => Promise.resolve({ detail: "Sign in", status: 401 }),
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
       }),
     );
+  });
+
+  it("prompts an anonymous user to create an account", async () => {
+    render(<MemoryRouter><App /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    expect(await screen.findByRole("heading", { name: "Create your account" })).toBeInTheDocument();
   });
 
   it("renders the empty dataset hub state", async () => {
     render(<MemoryRouter><App /></MemoryRouter>);
     expect(await screen.findByText("Your datasets, legible and versioned.")).toBeInTheDocument();
     expect(await screen.findByText("Create your first dataset")).toBeInTheDocument();
+  });
+
+  it("highlights the active workspace tab", async () => {
+    const createdAt = "2026-07-22T08:00:00Z";
+    const summary = {
+      revision_id: "abc123",
+      branch: "main",
+      commit_message: "Initial import",
+      status: "ready",
+      manifest_sha256: "0".repeat(64),
+      error_code: null,
+      error_message: null,
+      created_at: createdAt,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let body: unknown;
+        if (url.endsWith("/auth/me")) {
+          return Promise.resolve({
+            ok: false,
+            status: 401,
+            statusText: "Unauthorized",
+            json: () => Promise.resolve({ detail: "Sign in", status: 401 }),
+          });
+        } else if (url.includes("/revisions/abc123")) {
+          body = {
+            ...summary,
+            card_markdown: "",
+            card_html: "",
+            card_metadata: {},
+            files: [],
+            configs: [],
+          };
+        } else if (url.endsWith("/revisions")) {
+          body = [summary];
+        } else if (url.includes("/tree/abc123/page")) {
+          body = { items: [], total: 0, offset: 0, limit: 100 };
+        } else {
+          body = {
+            id: "dataset-id",
+            namespace: "research",
+            slug: "demo",
+            visibility: "private",
+            description: "Demo dataset",
+            default_branch: "main",
+            created_at: createdAt,
+            updated_at: createdAt,
+            owner: "research",
+            can_edit: false,
+            latest_revision: summary,
+          };
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/datasets/research/demo/files?revision=abc123"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Repository files")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
   });
 });
