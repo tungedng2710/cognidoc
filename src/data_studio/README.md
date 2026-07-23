@@ -1,6 +1,6 @@
-# CogniDoc Data Studio
+# TonAI Data Studio
 
-CogniDoc Data Studio is a self-hosted repository and viewer for machine-learning datasets. It accepts
+TonAI Data Studio is a self-hosted repository and viewer for machine-learning datasets. It accepts
 the folder contract used by the Hugging Face Dataset Hub: upload a repository with its `README.md`,
 data shards, metadata, and media paths intact. The Studio preserves the source bytes, creates an
 immutable content-addressed revision, and exposes the Dataset Card, rows, files, schema, statistics,

@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DATA_STUDIO_", env_file=".env", extra="ignore")
 
-    app_name: str = "CogniDoc Data Studio"
+    app_name: str = "TonAI Data Studio"
     environment: str = "development"
     auto_create_tables: bool = True
     database_url: str = "sqlite:///./data/data-studio.db"

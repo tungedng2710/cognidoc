@@ -3,7 +3,6 @@ import {
   BookOpenText,
   Braces,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Database,
@@ -43,6 +42,7 @@ import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { DataTable } from "../components/DataTable";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
+import { StudioSelect } from "../components/StudioSelect";
 import { UploadDialog } from "../components/UploadDialog";
 import type {
   Dataset,
@@ -80,26 +80,25 @@ function SelectionControls({
   const config = configs.find((item) => item.name === configName) ?? configs[0];
   return (
     <div className="flex flex-wrap gap-3">
-      <label className="select-label">
-        <span>Subset</span>
-        <select
-          value={configName}
-          onChange={(event) => {
-            const next = configs.find((item) => item.name === event.target.value);
-            onChange(event.target.value, next?.splits[0]?.name ?? "train");
-          }}
-        >
-          {configs.map((item) => <option key={item.name}>{item.name}</option>)}
-        </select>
-        <ChevronDown className="size-3" />
-      </label>
-      <label className="select-label">
-        <span>Split</span>
-        <select value={splitName} onChange={(event) => onChange(configName, event.target.value)}>
-          {config?.splits.map((split) => <option key={split.name}>{split.name}</option>)}
-        </select>
-        <ChevronDown className="size-3" />
-      </label>
+      <StudioSelect
+        ariaLabel="Dataset subset"
+        className="min-w-44"
+        label="Subset"
+        value={configName}
+        options={configs.map((item) => ({ value: item.name, label: item.name }))}
+        onChange={(nextConfig) => {
+          const next = configs.find((item) => item.name === nextConfig);
+          onChange(nextConfig, next?.splits[0]?.name ?? "train");
+        }}
+      />
+      <StudioSelect
+        ariaLabel="Dataset split"
+        className="min-w-40"
+        label="Split"
+        value={splitName}
+        options={(config?.splits ?? []).map((split) => ({ value: split.name, label: split.name }))}
+        onChange={(nextSplit) => onChange(configName, nextSplit)}
+      />
     </div>
   );
 }
@@ -275,10 +274,16 @@ function ViewerTab({
       <div className="surface-panel flex flex-wrap items-end justify-between gap-4 p-4">
         <SelectionControls configs={revision.configs} configName={selectedConfig.name} splitName={selectedSplit.name} onChange={changeSelection} />
         <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => applyFilter(event)}>
-          <select className="field-input mt-0 w-44" value={filterColumn} onChange={(event) => setFilterColumn(event.target.value)} aria-label="Filter column">
-            <option value="">Choose column</option>
-            {selectedSplit.schema.map((field) => <option key={field.name}>{field.name}</option>)}
-          </select>
+          <StudioSelect
+            ariaLabel="Filter column"
+            className="w-48"
+            value={filterColumn}
+            options={[
+              { value: "", label: "Choose column" },
+              ...selectedSplit.schema.map((field) => ({ value: field.name, label: field.name })),
+            ]}
+            onChange={setFilterColumn}
+          />
           <label className="relative">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
             <input className="field-input mt-0 w-56 pl-9" placeholder="Contains value…" value={filterValue} onChange={(event) => setFilterValue(event.target.value)} />
@@ -593,14 +598,20 @@ function SettingsTab({
               Description
               <textarea className="field-input min-h-24 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />
             </label>
-            <label className="field-label">
-              Visibility
-              <select className="field-input" value={visibility} onChange={(event) => setVisibility(event.target.value as Dataset["visibility"])}>
-                <option value="private">Private — owner only</option>
-                <option value="internal">Internal — signed-in users</option>
-                <option value="public">Public — everyone</option>
-              </select>
-            </label>
+            <div className="field-label">
+              <span>Visibility</span>
+              <StudioSelect
+                ariaLabel="Dataset visibility"
+                className="mt-1"
+                value={visibility}
+                options={[
+                  { value: "private", label: "Private", description: "Only the owner and workspace administrators." },
+                  { value: "internal", label: "Internal", description: "Every signed-in Studio user." },
+                  { value: "public", label: "Public", description: "Anyone with the repository link." },
+                ]}
+                onChange={(next) => setVisibility(next as Dataset["visibility"])}
+              />
+            </div>
             {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
             <button className="button-primary" type="submit" disabled={saving}><Save className="size-4" /> {saving ? "Saving…" : "Save changes"}</button>
           </form>
@@ -766,12 +777,19 @@ export function DatasetWorkspace() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 {revisions.length ? (
-                  <label className="select-label">
-                    <GitCommitHorizontal className="size-3" /><span>Revision</span>
-                    <select value={selectedRevision} onChange={(event) => changeRevision(event.target.value)}>
-                      {revisions.map((item) => <option key={item.revision_id} value={item.revision_id}>{item.revision_id}</option>)}
-                    </select><ChevronDown className="size-3" />
-                  </label>
+                  <StudioSelect
+                    ariaLabel="Dataset revision"
+                    className="min-w-56"
+                    label="Revision"
+                    leadingIcon={<GitCommitHorizontal className="size-4" />}
+                    value={selectedRevision ?? revisions[0]?.revision_id ?? ""}
+                    options={revisions.map((item) => ({
+                      value: item.revision_id,
+                      label: item.revision_id,
+                      description: item.commit_message,
+                    }))}
+                    onChange={changeRevision}
+                  />
                 ) : null}
                 {repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
               </div>

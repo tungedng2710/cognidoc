@@ -16,7 +16,26 @@ import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
+import { StudioSelect } from "../components/StudioSelect";
 import type { Dataset, Visibility } from "../types";
+
+const visibilityOptions = [
+  {
+    value: "private",
+    label: "Private",
+    description: "Only you and workspace administrators can access it.",
+  },
+  {
+    value: "internal",
+    label: "Internal",
+    description: "Every signed-in Studio user can access it.",
+  },
+  {
+    value: "public",
+    label: "Public",
+    description: "Anyone with the link can access it.",
+  },
+];
 
 function CreateDatasetDialog({ close }: { close: () => void }) {
   const navigate = useNavigate();
@@ -89,18 +108,16 @@ function CreateDatasetDialog({ close }: { close: () => void }) {
             onChange={(event) => setDescription(event.target.value)}
           />
         </label>
-        <label className="field-label mt-4">
-          Visibility
-          <select
-            className="field-input"
+        <div className="field-label mt-4">
+          <span>Visibility</span>
+          <StudioSelect
+            ariaLabel="Dataset visibility"
+            className="mt-1"
             value={visibility}
-            onChange={(event) => setVisibility(event.target.value as Visibility)}
-          >
-            <option value="private">Private — invited members only</option>
-            <option value="internal">Internal — everyone in this Studio</option>
-            <option value="public">Public — unauthenticated readers</option>
-          </select>
-        </label>
+            options={visibilityOptions}
+            onChange={(next) => setVisibility(next as Visibility)}
+          />
+        </div>
         {error ? <p className="mt-4 text-sm font-medium text-rose-700">{error}</p> : null}
         <div className="mt-6 flex justify-end gap-3">
           <button className="button-secondary" type="button" onClick={close}>Cancel</button>

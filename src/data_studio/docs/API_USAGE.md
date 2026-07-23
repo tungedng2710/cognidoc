@@ -1,6 +1,6 @@
 # Data Studio API usage
 
-CogniDoc Data Studio exposes a REST API under `/api/v1`. It accepts Hugging Face-compatible
+TonAI Data Studio exposes a REST API under `/api/v1`. It accepts Hugging Face-compatible
 repository folders, but it is not a drop-in implementation of the `huggingface_hub` protocol.
 
 The examples below assume the Compose deployment is available at `http://localhost:3000` and that
