@@ -198,7 +198,9 @@ curl --fail-with-body --silent --show-error --get \
 Supported filter operations are `eq`, `ne`, `contains`, `gt`, `gte`, `lt`, and `lte`. Preview rows
 are a bounded sample; inspect the response `capabilities` before assuming full-dataset operations.
 
-## Download a source file
+## Download files or a complete revision
+
+### Download one source file
 
 ```bash
 curl --fail-with-body --location \
@@ -209,6 +211,39 @@ curl --fail-with-body --location \
 
 Source downloads are streamed and retain the uploaded bytes.
 
+### Pull a complete repository
+
+The tree endpoint returns every path in a revision. The following Bash workflow downloads each
+source object and recreates the original repository layout locally. Set `REVISION_ID` to an
+immutable revision ID for a reproducible snapshot, or use `main` to pull the latest revision.
+
+```bash
+export DATASET_PATH=owner/sentiment-demo
+export REVISION_ID=main
+export DESTINATION=sentiment-demo
+
+mkdir -p "$DESTINATION"
+
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
+  "$DATA_STUDIO_API/datasets/$DATASET_PATH/tree/$REVISION_ID" \
+  | jq -r '.[].path' \
+  | while IFS= read -r path; do
+      encoded_path="$(jq -nr --arg path "$path" '$path | @uri')"
+      mkdir -p "$DESTINATION/$(dirname "$path")"
+      echo "Downloading $path"
+      curl --fail --silent --show-error --location --retry 3 \
+        --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
+        --output "$DESTINATION/$path" \
+        "$DATA_STUDIO_API/datasets/$DATASET_PATH/blob/$REVISION_ID/$encoded_path"
+    done
+```
+
+Public datasets do not require credentials; remove both `Authorization` headers when pulling one.
+Private datasets require an owner or administrator token, while internal datasets require a token
+from any signed-in user. The Studio accepts Hugging Face-compatible layouts but is not a drop-in
+implementation of the Hub download protocol, so `hf download` cannot pull these repositories.
+
 ## Update or delete a dataset
 
 ```bash
@@ -216,9 +251,12 @@ curl --fail-with-body --silent --show-error \
   --request PATCH \
   --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"description":"Updated description","visibility":"internal"}' \
+  --data '{"slug":"sentiment-v2","description":"Updated description","visibility":"internal"}' \
   "$DATA_STUDIO_API/datasets/owner/sentiment-demo" | jq
 ```
+
+Changing `slug` renames the dataset and changes its URL. Existing immutable revisions and downloads
+remain available under the new repository URL.
 
 Deletion permanently removes repository metadata and its source and derived object prefixes:
 

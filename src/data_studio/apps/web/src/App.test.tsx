@@ -34,6 +34,7 @@ describe("App", () => {
   it("renders the empty dataset hub state", async () => {
     render(<MemoryRouter><App /></MemoryRouter>);
     expect(await screen.findByText("Your datasets, legible and versioned.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repositories" })).toBeInTheDocument();
     expect(await screen.findByText("Create your first dataset")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");
   });
@@ -42,6 +43,7 @@ describe("App", () => {
     render(<MemoryRouter initialEntries={["/docs/api"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Data Studio API guide" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "3. Upload and publish" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "5. Pull a complete repository" })).toBeInTheDocument();
   });
 
   it("highlights the active workspace tab", async () => {
@@ -111,7 +113,21 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
   });
 
-  it("lets an owner delete a dataset before its first revision", async () => {
+  it("lets an owner rename and delete a dataset before its first revision", async () => {
+    let currentSlug = "test-dataset";
+    const datasetPayload = () => ({
+      id: "dataset-id",
+      namespace: "owner",
+      slug: currentSlug,
+      visibility: "private",
+      description: "",
+      default_branch: "main",
+      created_at: "2026-07-22T08:00:00Z",
+      updated_at: "2026-07-22T08:00:00Z",
+      owner: "owner",
+      can_edit: true,
+      latest_revision: null,
+    });
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/auth/me")) {
@@ -131,6 +147,11 @@ describe("App", () => {
       if (init?.method === "DELETE") {
         return Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) });
       }
+      if (init?.method === "PATCH") {
+        const body = typeof init.body === "string" ? init.body : "{}";
+        currentSlug = (JSON.parse(body) as { slug: string }).slug;
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(datasetPayload()) });
+      }
       if (url.endsWith("/revisions")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
       }
@@ -140,19 +161,7 @@ describe("App", () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({
-          id: "dataset-id",
-          namespace: "owner",
-          slug: "test-dataset",
-          visibility: "private",
-          description: "",
-          default_branch: "main",
-          created_at: "2026-07-22T08:00:00Z",
-          updated_at: "2026-07-22T08:00:00Z",
-          owner: "owner",
-          can_edit: true,
-          latest_revision: null,
-        }),
+        json: () => Promise.resolve(datasetPayload()),
       });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -163,15 +172,35 @@ describe("App", () => {
       </MemoryRouter>,
     );
 
+    fireEvent.change(await screen.findByRole("textbox", { name: /Dataset name/ }), {
+      target: { value: "renamed-dataset" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/datasets/owner/test-dataset",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            slug: "renamed-dataset",
+            description: "",
+            visibility: "private",
+          }),
+        }),
+      );
+    });
+
+    expect(await screen.findByRole("heading", { name: "renamed-dataset" })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Delete dataset" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Confirm dataset name" }), {
-      target: { value: "test-dataset" },
+      target: { value: "renamed-dataset" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Permanently delete" }));
 
     await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/datasets/owner/test-dataset",
+        "/api/v1/datasets/owner/renamed-dataset",
         expect.objectContaining({ method: "DELETE" }),
       );
     });

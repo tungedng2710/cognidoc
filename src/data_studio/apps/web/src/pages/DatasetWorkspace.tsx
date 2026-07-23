@@ -526,6 +526,8 @@ function SettingsTab({
   onDeleted: () => void;
 }) {
   const { user, openAuth } = useAuth();
+  const navigate = useNavigate();
+  const [slug, setSlug] = useState(dataset.slug);
   const [description, setDescription] = useState(dataset.description);
   const [visibility, setVisibility] = useState(dataset.visibility);
   const [saving, setSaving] = useState(false);
@@ -539,10 +541,14 @@ function SettingsTab({
     setError("");
     try {
       const updated = await api.updateDataset(dataset.namespace, dataset.slug, {
+        slug,
         description,
         visibility,
       });
       onUpdated(updated);
+      if (updated.slug !== dataset.slug) {
+        await navigate(`/datasets/${updated.namespace}/${updated.slug}/settings`, { replace: true });
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update the dataset.");
     } finally {
@@ -569,6 +575,20 @@ function SettingsTab({
         <div className="flex items-center gap-3"><Shield className="size-5 text-indigo-600" /><h2 className="font-semibold">Repository access</h2></div>
         {dataset.can_edit ? (
           <form className="mt-5 space-y-4" onSubmit={(event) => void save(event)}>
+            <label className="field-label">
+              Dataset name
+              <div className="mt-1 flex min-h-10 items-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm focus-within:border-indigo-400 focus-within:ring-3 focus-within:ring-indigo-500/10">
+                <span className="border-r border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">{dataset.namespace} /</span>
+                <input
+                  className="min-w-0 flex-1 px-3 text-sm text-slate-900 outline-none"
+                  required
+                  pattern="[a-z0-9][a-z0-9._-]{0,95}"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value.toLowerCase())}
+                />
+              </div>
+              <span className="mt-1 block font-normal text-slate-400">Renaming changes the repository URL but keeps every revision intact.</span>
+            </label>
             <label className="field-label">
               Description
               <textarea className="field-input min-h-24 resize-none" value={description} onChange={(event) => setDescription(event.target.value)} />

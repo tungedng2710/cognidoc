@@ -20,6 +20,8 @@ class ObjectStorage(Protocol):
 
     def delete_prefix(self, prefix: str) -> None: ...
 
+    def delete_objects(self, keys: list[str]) -> None: ...
+
 
 class LocalObjectStorage:
     def __init__(self, root: Path) -> None:
@@ -56,6 +58,16 @@ class LocalObjectStorage:
             shutil.rmtree(target)
         elif target.exists():
             target.unlink()
+
+    def delete_objects(self, keys: list[str]) -> None:
+        for key in set(keys):
+            target = self._resolve(key)
+            if target.is_file():
+                target.unlink()
+            parent = target.parent
+            while parent != self.root and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
 
 
 class S3ObjectStorage:
@@ -108,6 +120,16 @@ class S3ObjectStorage:
             )
             if not response.get("IsTruncated"):
                 break
+
+    def delete_objects(self, keys: list[str]) -> None:
+        unique = sorted(set(keys))
+        for offset in range(0, len(unique), 1_000):
+            batch = unique[offset : offset + 1_000]
+            if batch:
+                self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+                )
 
 
 def create_storage(settings: Settings) -> ObjectStorage:

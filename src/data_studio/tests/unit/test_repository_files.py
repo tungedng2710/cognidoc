@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
 from data_studio_api.config import Settings
 from data_studio_api.database import Base
+from data_studio_api.errors import ConflictError
 from data_studio_api.models import (
     DatasetConfig,
     DatasetRepository,
@@ -9,7 +11,8 @@ from data_studio_api.models import (
     RepositoryFile,
     RevisionStatus,
 )
-from data_studio_api.service import DatasetService, get_revision
+from data_studio_api.schemas import DatasetPatch
+from data_studio_api.service import DatasetService, get_repository, get_revision
 from data_studio_api.storage import LocalObjectStorage
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -69,7 +72,11 @@ def test_revision_file_loading_is_optional_and_file_pages_are_searchable(
             storage_root=tmp_path / "objects",
             staging_root=tmp_path / "uploads",
         )
-        service = DatasetService(db, LocalObjectStorage(settings.storage_root), settings)
+        storage = LocalObjectStorage(settings.storage_root)
+        service = DatasetService(db, storage, settings)
+        for key in ["objects/README.md", "objects/data/test.parquet", "objects/data/train.parquet"]:
+            storage.put_bytes(key, key.encode(), "application/octet-stream")
+        storage.put_bytes("manifests/abc123.json", b"{}", "application/json")
         files, total = service.list_files(
             "research",
             "demo",
@@ -92,7 +99,22 @@ def test_revision_file_loading_is_optional_and_file_pages_are_searchable(
         assert literal_total == 0
         assert not literal_wildcard
 
-        service.delete_repository("research", "demo")
+        conflicting = DatasetRepository(namespace="research", slug="taken")
+        db.add(conflicting)
+        db.commit()
+        with pytest.raises(ConflictError):
+            service.patch_repository("research", "demo", DatasetPatch(slug="taken"))
+        db.delete(conflicting)
+        db.commit()
+
+        renamed = service.patch_repository("research", "demo", DatasetPatch(slug="renamed"))
+        assert renamed.slug == "renamed"
+        assert get_repository(db, "research", "renamed").id == repository.id
+        assert service.get_file("research", "renamed", "abc123", "README.md").path == "README.md"
+
+        service.delete_repository("research", "renamed")
         assert db.scalar(select(func.count()).select_from(DatasetRepository)) == 0
         assert db.scalar(select(func.count()).select_from(DatasetRevision)) == 0
         assert db.scalar(select(func.count()).select_from(RepositoryFile)) == 0
+        assert not (settings.storage_root / "objects/README.md").exists()
+        assert not (settings.storage_root / "manifests/abc123.json").exists()

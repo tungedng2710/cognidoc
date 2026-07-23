@@ -178,7 +178,12 @@ def test_public_read_and_owner_only_mutations(client: TestClient) -> None:
         json={"username": "owner", "password": "secure-password"},
     )
     assert logged_in.status_code == 200
-    assert client.delete("/api/v1/datasets/owner/public-demo").status_code == 204
+    renamed = client.patch("/api/v1/datasets/owner/public-demo", json={"slug": "renamed-demo"})
+    assert renamed.status_code == 200
+    assert renamed.json()["slug"] == "renamed-demo"
+    assert client.get("/api/v1/datasets/owner/public-demo").status_code == 404
+    assert client.get("/api/v1/datasets/owner/renamed-demo").status_code == 200
+    assert client.delete("/api/v1/datasets/owner/renamed-demo").status_code == 204
 
 
 def test_zero_upload_limits_disable_resource_caps(client: TestClient) -> None:

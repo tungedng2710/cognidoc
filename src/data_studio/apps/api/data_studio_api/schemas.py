@@ -33,6 +33,7 @@ class DatasetCreate(BaseModel):
 
 
 class DatasetPatch(BaseModel):
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,95}$")
     visibility: Visibility | None = None
     description: str | None = Field(default=None, max_length=2_000)
 

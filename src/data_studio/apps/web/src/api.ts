@@ -93,7 +93,7 @@ export const api = {
   updateDataset(
     namespace: string,
     dataset: string,
-    body: { visibility?: Visibility; description?: string },
+    body: { slug?: string; visibility?: Visibility; description?: string },
   ): Promise<Dataset> {
     return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
       method: "PATCH",

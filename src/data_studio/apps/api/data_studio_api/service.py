@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
@@ -122,11 +123,26 @@ class DatasetService:
 
     def delete_repository(self, namespace: str, slug: str) -> None:
         repository = get_repository(self.db, namespace, slug)
-        self.storage.delete_prefix(f"datasets/source/{namespace}/{slug}/")
-        self.storage.delete_prefix(f"datasets/derived/{namespace}/{slug}/")
         revision_ids = select(DatasetRevision.id).where(
             DatasetRevision.repository_id == repository.id
         )
+        object_keys = list(
+            self.db.scalars(
+                select(RepositoryFile.storage_object_key).where(
+                    RepositoryFile.revision_id.in_(revision_ids)
+                )
+            ).all()
+        )
+        object_keys.extend(
+            self.db.scalars(
+                select(DatasetRevision.manifest_object_key).where(
+                    DatasetRevision.repository_id == repository.id
+                )
+            ).all()
+        )
+        self.storage.delete_objects(object_keys)
+        self.storage.delete_prefix(f"datasets/source/{namespace}/{slug}/")
+        self.storage.delete_prefix(f"datasets/derived/{namespace}/{slug}/")
         config_ids = select(DatasetConfig.id).where(DatasetConfig.revision_id.in_(revision_ids))
         self.db.execute(delete(DatasetSplit).where(DatasetSplit.config_id.in_(config_ids)))
         self.db.execute(delete(DatasetConfig).where(DatasetConfig.revision_id.in_(revision_ids)))
@@ -146,10 +162,22 @@ class DatasetService:
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
-        for key, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
+        changes = data.model_dump(exclude_unset=True, exclude_none=True)
+        new_slug = changes.get("slug")
+        if new_slug and new_slug != repository.slug:
+            existing = self.db.scalar(_repository_query(namespace, new_slug))
+            if existing is not None:
+                raise ConflictError(f"Dataset {namespace}/{new_slug} already exists.")
+        for key, value in changes.items():
             setattr(repository, key, value)
         repository.updated_at = utcnow()
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            if new_slug:
+                raise ConflictError(f"Dataset {namespace}/{new_slug} already exists.") from exc
+            raise
         self.db.refresh(repository)
         return repository
 

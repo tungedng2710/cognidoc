@@ -180,8 +180,7 @@ export function DatasetsPage() {
         <section className="mt-7">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-semibold tracking-tight text-slate-950">Your repositories</h2>
-              <p className="mt-1 text-sm text-slate-500">Repositories you can access in this Studio.</p>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-950">Repositories</h2>
             </div>
             <label className="relative block w-full max-w-xs">
               <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
