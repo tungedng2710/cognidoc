@@ -79,7 +79,7 @@
   }
 
   .tab-link {
-    @apply inline-flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 border-transparent px-4 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-900;
+    @apply inline-flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 border-transparent px-3.5 py-2.5 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-900;
   }
 
   .tab-link-active {
@@ -88,6 +88,10 @@
 
   .app-header {
     @apply border-b border-white/10 bg-slate-950 text-white shadow-lg shadow-slate-950/10;
+  }
+
+  .page-shell {
+    @apply mx-auto w-full px-4 sm:px-6 lg:w-4/5 lg:px-0;
   }
 
   .surface-panel {

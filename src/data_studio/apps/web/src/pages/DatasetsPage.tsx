@@ -5,7 +5,6 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
@@ -13,6 +12,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../api";
 import { AccountControls } from "../components/Auth";
+import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
@@ -135,13 +135,10 @@ export function DatasetsPage() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-30">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3.5">
+        <div className="page-shell flex items-center justify-between py-2.5">
           <Brand />
-          <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-2 text-xs font-medium text-slate-400 sm:flex">
-              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153)]" />
-              {user ? "Private workspace" : "Public catalog"}
-            </span>
+          <div className="flex items-center gap-2">
+            <ApiGuideLink />
             <AccountControls />
             <button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}>
               <Plus className="size-4" /> <span className="hidden sm:inline">New dataset</span><span className="sm:hidden">New</span>
@@ -149,38 +146,38 @@ export function DatasetsPage() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-10 lg:py-14">
-        <section className="relative overflow-hidden rounded-[2rem] bg-slate-950 px-7 py-9 text-white shadow-2xl shadow-slate-950/15 sm:px-10 lg:px-12 lg:py-12">
+      <main className="page-shell py-7 lg:py-9">
+        <section className="relative overflow-hidden rounded-[2rem] bg-slate-950 px-7 py-7 text-white shadow-2xl shadow-slate-950/15 sm:px-9 lg:px-10 lg:py-8">
           <div className="pointer-events-none absolute -top-36 -right-28 size-96 rounded-full bg-indigo-500/25 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-40 left-1/3 size-80 rounded-full bg-cyan-400/15 blur-3xl" />
-          <div className="relative grid gap-10 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
-          <div>
-            <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-cyan-300 uppercase">
-              <Sparkles className="size-3.5" /> {user ? "Private dataset hub" : "Public dataset catalog"}
-            </p>
-            <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
-              Your datasets, legible and versioned.
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
-              {user ? "Upload Hugging Face-compatible repositories without conversion. Browse cards, shards, schemas, and rows from one focused workspace." : "Browse public dataset cards, repository files, schemas, and indexed rows. Sign in to create and manage your own repositories."}
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="metric-card">
-              <Database className="size-5 text-cyan-300" />
-              <p className="mt-5 text-2xl font-semibold text-white">{datasets?.length ?? "—"}</p>
-              <p className="mt-1 text-xs font-medium text-slate-400">Repositories</p>
+          <div className="relative grid gap-7 lg:grid-cols-[1.45fr_0.55fr] lg:items-center">
+            <div>
+              <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-cyan-300 uppercase">
+                Hugging Face-compatible data workspace
+              </p>
+              <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-white sm:text-4xl">
+                Your datasets, legible and versioned.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                Upload compatible repositories without conversion, then browse cards, shards, schemas, and rows from one focused workspace.
+              </p>
             </div>
-            <div className="metric-card">
-              <ShieldCheck className="size-5 text-indigo-300" />
-              <p className="mt-5 text-sm font-semibold text-white">Source preserved</p>
-              <p className="mt-1 text-xs leading-5 text-slate-400">Immutable revisions</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="metric-card">
+                <Database className="size-5 text-cyan-300" />
+                <p className="mt-5 text-2xl font-semibold text-white">{datasets?.length ?? "—"}</p>
+                <p className="mt-1 text-xs font-medium text-slate-400">Repositories</p>
+              </div>
+              <div className="metric-card">
+                <ShieldCheck className="size-5 text-indigo-300" />
+                <p className="mt-5 text-sm font-semibold text-white">Source preserved</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">Immutable revisions</p>
+              </div>
             </div>
-          </div>
           </div>
         </section>
 
-        <section className="mt-10">
+        <section className="mt-7">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-slate-950">Your repositories</h2>
@@ -208,7 +205,7 @@ export function DatasetsPage() {
               />
             ) : null}
             {filtered?.length ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {filtered.map((dataset) => (
                   <Link
                     className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-900/5 transition hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-950/8"

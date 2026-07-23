@@ -35,6 +35,13 @@ describe("App", () => {
     render(<MemoryRouter><App /></MemoryRouter>);
     expect(await screen.findByText("Your datasets, legible and versioned.")).toBeInTheDocument();
     expect(await screen.findByText("Create your first dataset")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");
+  });
+
+  it("renders the API usage guide", async () => {
+    render(<MemoryRouter initialEntries={["/docs/api"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Data Studio API guide" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "3. Upload and publish" })).toBeInTheDocument();
   });
 
   it("highlights the active workspace tab", async () => {

@@ -150,7 +150,9 @@ silently switch to a heuristic layout.
 ## API outline
 
 All application endpoints live under `/api/v1`. The interactive OpenAPI document contains the full
-request and response contracts.
+request and response contracts. See the [API usage guide](docs/API_USAGE.md) for complete `curl`
+examples covering authentication, tokens, repository creation, folder upload, previews, downloads,
+updates, and deletion.
 
 ```text
 POST /auth/register

@@ -14,7 +14,6 @@ import {
   Filter,
   GitCommitHorizontal,
   Globe2,
-  LockKeyhole,
   Search,
   Save,
   Settings,
@@ -39,6 +38,7 @@ import {
 
 import { api } from "../api";
 import { AccountControls } from "../components/Auth";
+import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { DataTable } from "../components/DataTable";
@@ -465,7 +465,7 @@ function StatisticsTab({ namespace, dataset, revision }: { namespace: string; da
         {error ? <ErrorState message={error} /> : null}
         {!error && !stats ? <LoadingState label="Loading bounded statistics…" /> : null}
         {stats ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {columns.map(([name, values]) => (
               <div className="rounded-2xl border border-slate-200 bg-white p-5" key={name}>
                 <div className="flex items-center justify-between gap-3">
@@ -687,8 +687,8 @@ export function DatasetWorkspace() {
     return next;
   }, [params, selectedRevision]);
 
-  if (loading || authLoading) return <div className="mx-auto max-w-7xl p-6"><LoadingState /></div>;
-  if (error || !repository) return <div className="mx-auto max-w-5xl p-6"><ErrorState message={error || "Dataset not found."} retry={reloadRepository} /></div>;
+  if (loading || authLoading) return <div className="page-shell py-6"><LoadingState /></div>;
+  if (error || !repository) return <div className="page-shell py-6"><ErrorState message={error || "Dataset not found."} retry={reloadRepository} /></div>;
 
   const changeRevision = (value: string) => {
     const next = new URLSearchParams(params);
@@ -711,28 +711,31 @@ export function DatasetWorkspace() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-40">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-6 py-3.5">
+        <div className="page-shell flex items-center justify-between py-2.5">
           <Brand />
           <div className="flex items-center gap-2">
             <Link className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white" to="/"><ChevronLeft className="size-4" /> All datasets</Link>
+            <ApiGuideLink />
             <AccountControls />
           </div>
         </div>
       </header>
       <main>
         <section className="border-b border-slate-200 bg-white/90 shadow-sm shadow-slate-900/3">
-          <div className="mx-auto max-w-[1500px] px-6 pt-8">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex items-start gap-4">
-                <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-950/15"><Database className="size-6" /></span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                    <span>{namespace}</span><span>/</span><span className="status-pill">{repository.visibility === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />} {repository.visibility}</span>
+          <div className="page-shell pt-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-md shadow-indigo-950/15"><Database className="size-4.5" /></span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-slate-500">{namespace} /</p>
+                    <h1 className="truncate text-2xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
                   </div>
-                  <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
-                  <p className="mt-2 max-w-2xl text-sm text-slate-500">{repository.description || "No description yet."}</p>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 pl-12 text-xs text-slate-500">
+                  <p className="max-w-xl truncate">{repository.description || "No description yet."}</p>
                   {revision ? (
-                    <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                       <span><strong className="font-semibold text-slate-800">{revision.configs.length.toLocaleString()}</strong> subsets</span>
                       <span><strong className="font-semibold text-slate-800">{splitCount.toLocaleString()}</strong> splits</span>
                       <span><strong className="font-semibold text-slate-800">{totalRows.toLocaleString()}</strong> rows</span>
@@ -753,7 +756,7 @@ export function DatasetWorkspace() {
                 {repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
               </div>
             </div>
-            <nav className="mt-8 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
+            <nav className="mt-3 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
               {tabs.map((tab) => (
                 <NavLink
                   className={({ isActive }) => `tab-link ${isActive ? "tab-link-active" : ""}`}
@@ -770,7 +773,7 @@ export function DatasetWorkspace() {
             </nav>
           </div>
         </section>
-        <section className="mx-auto max-w-[1500px] px-6 py-7 lg:py-8">
+        <section className="page-shell py-7 lg:py-8">
           {isSettingsRoute ? (
             <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
           ) : revisionError ? (
