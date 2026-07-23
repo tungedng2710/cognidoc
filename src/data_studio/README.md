@@ -86,13 +86,20 @@ set `RUSTFS_API_PORT` and `RUSTFS_CONSOLE_PORT` if either host port is already o
 ```bash
 cp .env.example .env
 # Replace the placeholder database and RustFS secrets in .env.
-docker compose --env-file .env -f infrastructure/docker-compose.yml up --build
+docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build
 ```
 
 Open <http://localhost:3000>. The RustFS console is available at
 <http://localhost:9001/rustfs/console/> (replace `9001` with `RUSTFS_CONSOLE_PORT` when overridden).
 Migrations run before the API starts. Named volumes keep PostgreSQL, Redis, RustFS, and
 upload-staging data across restarts.
+
+To rebuild only the web interface without starting or recreating API, database, or RustFS
+containers:
+
+```bash
+make compose-web
+```
 
 To stop the stack without deleting its named volumes:
 

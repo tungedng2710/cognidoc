@@ -32,6 +32,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useMatch,
   useParams,
   useSearchParams,
 } from "react-router-dom";
@@ -524,6 +525,7 @@ function SettingsTab({
   onUpdated: (dataset: Dataset) => void;
   onDeleted: () => void;
 }) {
+  const { user, openAuth } = useAuth();
   const [description, setDescription] = useState(dataset.description);
   const [visibility, setVisibility] = useState(dataset.visibility);
   const [saving, setSaving] = useState(false);
@@ -583,11 +585,25 @@ function SettingsTab({
             <button className="button-primary" type="submit" disabled={saving}><Save className="size-4" /> {saving ? "Saving…" : "Save changes"}</button>
           </form>
         ) : (
-          <dl className="mt-5 space-y-4 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Owner</dt><dd className="font-semibold">{dataset.owner ?? "Legacy repository"}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Visibility</dt><dd className="font-semibold capitalize">{dataset.visibility}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>
-          </dl>
+          <div className="mt-5">
+            <dl className="space-y-4 text-sm">
+              <div className="flex justify-between"><dt className="text-slate-500">Owner</dt><dd className="font-semibold">{dataset.owner ?? "Legacy repository"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Visibility</dt><dd className="font-semibold capitalize">{dataset.visibility}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>
+            </dl>
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              {user ? (
+                <p>
+                  You are signed in as <strong>{user.username}</strong>. Only {dataset.owner ? <>the owner, <strong>{dataset.owner}</strong>,</> : "a workspace administrator"} can edit or delete this dataset.
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p>Sign in with the owner account to edit or delete this dataset.</p>
+                  <button className="button-secondary bg-white" type="button" onClick={() => openAuth("login")}>Sign in</button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </section>
       <section className="surface-panel p-6">
@@ -627,6 +643,7 @@ const tabs = [
 export function DatasetWorkspace() {
   const { namespace = "", dataset = "" } = useParams();
   const navigate = useNavigate();
+  const isSettingsRoute = Boolean(useMatch("/datasets/:namespace/:dataset/settings"));
   const { user, loading: authLoading } = useAuth();
   const [params, setParams] = useSearchParams();
   const [repository, setRepository] = useState<Dataset | null>(null);
@@ -754,7 +771,9 @@ export function DatasetWorkspace() {
           </div>
         </section>
         <section className="mx-auto max-w-[1500px] px-6 py-7 lg:py-8">
-          {revisionError ? (
+          {isSettingsRoute ? (
+            <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
+          ) : revisionError ? (
             <ErrorState message={revisionError} retry={() => setRevisionReload((value) => value + 1)} />
           ) : selectedRevision && !revision ? (
             <LoadingState label="Loading immutable revision…" />
@@ -769,7 +788,6 @@ export function DatasetWorkspace() {
               <Route path="schema" element={<SchemaTab revision={revision} />} />
               <Route path="statistics" element={<StatisticsTab namespace={namespace} dataset={dataset} revision={revision} />} />
               <Route path="versions" element={<VersionsTab revisions={revisions} selected={revision.revision_id} />} />
-              <Route path="settings" element={<SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />} />
               <Route path="*" element={<Navigate to={{ pathname: basePath, search: selectedParams.toString() }} replace />} />
             </Routes>
           )}

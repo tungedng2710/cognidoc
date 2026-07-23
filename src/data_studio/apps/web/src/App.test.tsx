@@ -103,4 +103,70 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
   });
+
+  it("lets an owner delete a dataset before its first revision", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: "owner-id",
+            username: "owner",
+            display_name: "Owner",
+            email: null,
+            is_admin: false,
+            created_at: "2026-07-22T08:00:00Z",
+          }),
+        });
+      }
+      if (init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) });
+      }
+      if (url.endsWith("/revisions")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith("/datasets")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          id: "dataset-id",
+          namespace: "owner",
+          slug: "test-dataset",
+          visibility: "private",
+          description: "",
+          default_branch: "main",
+          created_at: "2026-07-22T08:00:00Z",
+          updated_at: "2026-07-22T08:00:00Z",
+          owner: "owner",
+          can_edit: true,
+          latest_revision: null,
+        }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/datasets/owner/test-dataset/settings"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete dataset" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Confirm dataset name" }), {
+      target: { value: "test-dataset" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete" }));
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/datasets/owner/test-dataset",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
 });
