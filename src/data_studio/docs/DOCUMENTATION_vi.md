@@ -120,7 +120,7 @@ Mọi bản triển khai tuân thủ PHẢI duy trì các invariant sau:
 | ARC-011 | Code được upload không bao giờ được thực thi khi ingestion, indexing, preview hoặc export. |
 | ARC-012 | Credential dài hạn của storage và database không bao giờ được cung cấp cho trình duyệt. |
 
-## 3. Trách nhiệm và hợp đồng của các thành phần
+## 3. Trách nhiệm và giao diện của các thành phần
 
 ### 3.1 Source adapter
 
@@ -130,7 +130,7 @@ Hệ thống PHẢI hỗ trợ hai source adapter logic:
 - **Hub import adapter** dành cho Hugging Face Hub repository đã được phân giải tới upstream commit
   bất biến.
 
-Cả hai adapter PHẢI tạo cùng một hợp đồng đầu vào nội bộ:
+Cả hai adapter PHẢI tạo cùng một giao diện dữ liệu đầu vào thống nhất:
 
 ```text
 IngestionInput
