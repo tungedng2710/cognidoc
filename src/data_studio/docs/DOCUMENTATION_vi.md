@@ -1,5 +1,7 @@
 # Đặc tả kiến trúc và lưu trữ dữ liệu Data Studio
 
+**Ngôn ngữ:** Tiếng Việt | [English](./DOCUMENTATION_en.md)
+
 | Thuộc tính tài liệu | Giá trị |
 | --- | --- |
 | Trạng thái | Đặc tả kiến trúc mang tính quy chuẩn |

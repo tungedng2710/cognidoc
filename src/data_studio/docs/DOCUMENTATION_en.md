@@ -1,5 +1,7 @@
 # Data Studio Architecture and Data Storage Specification
 
+**Language:** English | [Tiếng Việt](./DOCUMENTATION_vi.md)
+
 | Document attribute | Value |
 | --- | --- |
 | Status | Normative architecture specification |
