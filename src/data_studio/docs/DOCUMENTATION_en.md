@@ -11,6 +11,54 @@
 | Applies to | All production implementations of Data Studio |
 | Primary concern | Repository ingestion, immutable revisioning, storage, indexing, and dataset serving |
 
+## Table of contents
+
+- [1. Scope](#1-scope)
+  - [1.1 Normative language](#11-normative-language)
+  - [1.2 Definitions](#12-definitions)
+- [2. Reference architecture](#2-reference-architecture)
+  - [2.1 Architectural invariants](#21-architectural-invariants)
+- [3. Component responsibilities and contracts](#3-component-responsibilities-and-contracts)
+  - [3.1 Source adapters](#31-source-adapters)
+  - [3.2 Repository ingestion](#32-repository-ingestion)
+  - [3.3 HF format parser](#33-hf-format-parser)
+  - [3.4 PostgreSQL metadata catalog](#34-postgresql-metadata-catalog)
+  - [3.5 Git and DVC revision service](#35-git-and-dvc-revision-service)
+  - [3.6 RustFS object storage](#36-rustfs-object-storage)
+  - [3.7 Indexing service](#37-indexing-service)
+  - [3.8 Dataset Viewer and download service](#38-dataset-viewer-and-download-service)
+- [4. Canonical revision and manifest model](#4-canonical-revision-and-manifest-model)
+  - [4.1 Repository path rules](#41-repository-path-rules)
+  - [4.2 File identity](#42-file-identity)
+  - [4.3 Canonical manifest](#43-canonical-manifest)
+  - [4.4 Revision identity](#44-revision-identity)
+- [5. Standard ingestion and publication protocol](#5-standard-ingestion-and-publication-protocol)
+  - [5.1 State machine](#51-state-machine)
+  - [5.2 Protocol](#52-protocol)
+  - [5.3 Idempotency and concurrency](#53-idempotency-and-concurrency)
+  - [5.4 Failure and compensation](#54-failure-and-compensation)
+- [6. Storage layout and ownership](#6-storage-layout-and-ownership)
+  - [6.1 Authority by data class](#61-authority-by-data-class)
+  - [6.2 Storage rules](#62-storage-rules)
+- [7. Query, download, and export protocols](#7-query-download-and-export-protocols)
+  - [7.1 Dataset Viewer query](#71-dataset-viewer-query)
+  - [7.2 Original-file download](#72-original-file-download)
+  - [7.3 Revision export](#73-revision-export)
+- [8. Lifecycle, deletion, and disaster recovery](#8-lifecycle-deletion-and-disaster-recovery)
+  - [8.1 Revision lifecycle](#81-revision-lifecycle)
+  - [8.2 Deletion](#82-deletion)
+  - [8.3 Backup and recovery](#83-backup-and-recovery)
+- [9. Security requirements](#9-security-requirements)
+- [10. Observability and operational requirements](#10-observability-and-operational-requirements)
+- [11. Conformance and acceptance criteria](#11-conformance-and-acceptance-criteria)
+- [12. User usage examples](#12-user-usage-examples)
+  - [12.1 Example research dataset](#121-example-research-dataset)
+  - [12.2 Prepare the repository for publication](#122-prepare-the-repository-for-publication)
+  - [12.3 Publish the dataset through the web application](#123-publish-the-dataset-through-the-web-application)
+  - [12.4 Inspect and validate the published revision](#124-inspect-and-validate-the-published-revision)
+  - [12.5 Use a pinned revision in an experiment](#125-use-a-pinned-revision-in-an-experiment)
+  - [12.6 Publish a follow-up revision](#126-publish-a-follow-up-revision)
+
 ## 1. Scope
 
 This document specifies the target architecture and mandatory data lifecycle for Data Studio. It is
@@ -724,6 +772,236 @@ An implementation conforms to this specification only if automated tests demonst
 
 These requirements define the standard Data Studio architecture. Deviations require a reviewed
 architecture decision and SHALL preserve all architectural invariants in Section 2.1.
+
+## 12. User usage examples
+
+This section is informative. It illustrates the expected experience for an AI Researcher; the
+normative architecture and integrity requirements in the preceding sections remain authoritative.
+
+### 12.1 Example research dataset
+
+The examples use a table-understanding dataset named `table-html-reasoning-v2`. It pairs rendered
+table images with source HTML and deterministic logical-structure reasoning labels.
+
+The source workspace contains:
+
+```text
+table-html-reasoning-v2/
+├── README.md
+├── metadata.json
+├── hf_parquet/
+│   ├── train-00000-of-00006.parquet
+│   ├── train-00001-of-00006.parquet
+│   ├── ...
+│   ├── train-00005-of-00006.parquet
+│   └── test-00000-of-00001.parquet
+├── images/
+│   └── 31,490 PNG table images
+├── table_html/
+│   └── 31,490 HTML labels
+└── table_html_reasoning/
+    └── 31,490 JSON reasoning labels
+```
+
+The published dataset has the following expected split:
+
+| Split | Samples | Purpose |
+| --- | ---: | --- |
+| `train` | 28,341 | Model training and development |
+| `test` | 3,149 | Held-out evaluation |
+| **Total** | **31,490** | |
+
+Each published row contains:
+
+| Column | Meaning |
+| --- | --- |
+| `id` | Stable sample identifier |
+| `images` | One or more rendered table images |
+| `table_html` | Source table HTML |
+| `reasoning` | JSON-encoded logical table reasoning label |
+| `num_rows`, `num_cols`, `num_cells` | Structural dimensions |
+| `has_merged_cells` | Whether the table contains `rowspan` or `colspan` |
+| `validation_passed` | Result of deterministic structural validation |
+| `num_images` | Number of images associated with the sample |
+
+### 12.2 Prepare the repository for publication
+
+The researcher SHOULD place a Dataset Card at the upload root and explicitly declare the Parquet
+shards. An explicit declaration makes config/split resolution deterministic and avoids dependence
+on filename heuristics.
+
+Example `README.md` front matter:
+
+```yaml
+---
+license: other
+task_categories:
+  - image-to-text
+  - visual-question-answering
+language:
+  - en
+size_categories:
+  - 10K<n<100K
+pretty_name: Table HTML with Logical Reasoning
+configs:
+  - config_name: default
+    data_files:
+      - split: train
+        path: hf_parquet/train-*.parquet
+      - split: test
+        path: hf_parquet/test-*.parquet
+---
+```
+
+The Dataset Card SHOULD also document:
+
+- dataset purpose and intended model tasks;
+- source and license information;
+- split construction and leakage controls;
+- column definitions;
+- reasoning-label schema version;
+- known validation failures and limitations;
+- the procedure used to generate the labels.
+
+Before upload, the researcher SHOULD verify:
+
+1. every relative path uses `/` and resolves beneath the repository root;
+2. every Parquet shard opens successfully;
+3. image or auxiliary-file references resolve to files inside the repository;
+4. sample IDs are stable and unique;
+5. the split counts equal 28,341 training rows and 3,149 test rows;
+6. no credential, local absolute path, temporary file, or generated cache is included.
+
+### 12.3 Publish the dataset through the web application
+
+1. Open [TonAI Data Studio](https://3000--main--frontier--idp-lab.coder.vts-ai.space/) and sign in.
+2. Select **New dataset**.
+3. Use a repository identity such as:
+
+   ```text
+   Namespace: research
+   Dataset: table-html-reasoning-v2
+   Visibility: Internal
+   Description: Table images, HTML, and deterministic logical-structure reasoning labels
+   ```
+
+4. Open the repository and select **Upload revision**.
+5. Select the `table-html-reasoning-v2/` folder. The selected root SHALL contain `README.md`.
+6. Enter a descriptive commit message, for example:
+
+   ```text
+   Publish v2 with deterministic train/test split and logical reasoning labels
+   ```
+
+7. Start publication and keep the upload session open until all source files have been accepted.
+8. Wait for the revision state to become `ready`.
+9. Record the full revision ID shown by Data Studio.
+
+The researcher SHOULD expect the published revision to expose:
+
+- config `default`;
+- splits `train` and `test`;
+- 28,341 and 3,149 rows respectively;
+- the Dataset Card, repository file tree, schema, statistics, preview, and revision history.
+
+A mismatch in split count, missing shard, unresolved image, or invalid explicit `data_files` pattern
+SHALL be treated as a failed publication, not accepted as a partial dataset.
+
+### 12.4 Inspect and validate the published revision
+
+The researcher SHOULD perform the following checks before using the revision in an experiment:
+
+#### Dataset Card and revision
+
+- confirm the title, tasks, language, license, sources, and limitations;
+- confirm the displayed revision ID and publication message;
+- verify that the file tree contains all seven Parquet shards and required auxiliary assets.
+
+#### Schema and split counts
+
+- open config `default`;
+- compare the `train` and `test` row counts with the expected values;
+- verify that structural columns use numeric/boolean types;
+- verify that `images`, `table_html`, and `reasoning` are present.
+
+#### Visual and structural review
+
+- open representative rows and compare the rendered image with `table_html`;
+- filter `has_merged_cells = true` to inspect `rowspan`/`colspan` examples;
+- filter `validation_passed = false` to audit preserved source irregularities;
+- inspect samples from each source family rather than only the first page;
+- download at least one source object and verify its checksum when performing a release audit.
+
+The `reasoning` field is a JSON string. A decoded record is expected to include
+`schema_version`, `table_shape`, `cells`, `logical_grid`, `relations`, `reasoning_trace`, and
+`validation`. A region containing multiple top-level tables MAY decode to a list of reasoning
+records.
+
+### 12.5 Use a pinned revision in an experiment
+
+An experiment SHALL record the full Data Studio revision ID rather than a moving alias such as
+`main` or `latest`. It SHOULD also record the manifest and export checksums.
+
+Example experiment configuration:
+
+```yaml
+dataset:
+  repository: research/table-html-reasoning-v2
+  revision: sha256:<full-canonical-revision-hash>
+  config: default
+  train_split: train
+  evaluation_split: test
+  manifest_sha256: <manifest-checksum>
+  export_sha256: <optional-export-checksum>
+```
+
+After downloading and extracting a complete revision export to
+`./table-html-reasoning-v2`, the Parquet files can be loaded without executing repository code:
+
+```python
+import json
+
+from datasets import load_dataset
+
+data_files = {
+    "train": "./table-html-reasoning-v2/hf_parquet/train-*.parquet",
+    "test": "./table-html-reasoning-v2/hf_parquet/test-*.parquet",
+}
+dataset = load_dataset("parquet", data_files=data_files)
+
+assert dataset["train"].num_rows == 28_341
+assert dataset["test"].num_rows == 3_149
+
+sample = dataset["train"][0]
+decoded = json.loads(sample["reasoning"])
+reasoning_records = decoded if isinstance(decoded, list) else [decoded]
+
+print(sample["id"])
+print(reasoning_records[0]["table_shape"])
+print(reasoning_records[0]["logical_grid"][0])
+```
+
+The experiment record SHOULD additionally contain the training code commit, model configuration,
+random seed, and Data Studio revision ID. This is the minimum linkage required to reproduce which
+dataset bytes were used.
+
+### 12.6 Publish a follow-up revision
+
+When labels, HTML, images, or split assignments change, the researcher SHALL publish a child
+revision rather than replacing an existing ready revision.
+
+The recommended workflow is:
+
+1. start from the exact parent revision used to prepare the change;
+2. update source files and the Dataset Card;
+3. document schema or generation changes in the commit message;
+4. upload the complete repository tree;
+5. verify the expected parent revision before publication;
+6. repeat the Card, schema, split-count, visual, and validation checks;
+7. record the new full revision ID in subsequent experiment configurations.
+
+Previously completed experiments remain pinned to the earlier revision. This permits direct
+comparison between model results without ambiguity about dataset content.
 
 ---
 

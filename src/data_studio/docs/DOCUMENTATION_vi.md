@@ -11,6 +11,54 @@
 | Phạm vi áp dụng | Mọi bản triển khai Data Studio trong môi trường production |
 | Trọng tâm | Ingestion repository, revision bất biến, lưu trữ, indexing và phục vụ dataset |
 
+## Mục lục
+
+- [1. Phạm vi](#1-phạm-vi)
+  - [1.1 Ngôn ngữ quy chuẩn](#11-ngôn-ngữ-quy-chuẩn)
+  - [1.2 Thuật ngữ](#12-thuật-ngữ)
+- [2. Kiến trúc tham chiếu](#2-kiến-trúc-tham-chiếu)
+  - [2.1 Các invariant kiến trúc](#21-các-invariant-kiến-trúc)
+- [3. Trách nhiệm và giao diện của các thành phần](#3-trách-nhiệm-và-giao-diện-của-các-thành-phần)
+  - [3.1 Source adapter](#31-source-adapter)
+  - [3.2 Repository ingestion](#32-repository-ingestion)
+  - [3.3 HF format parser](#33-hf-format-parser)
+  - [3.4 PostgreSQL metadata catalog](#34-postgresql-metadata-catalog)
+  - [3.5 Dịch vụ Git và DVC revision](#35-dịch-vụ-git-và-dvc-revision)
+  - [3.6 RustFS object storage](#36-rustfs-object-storage)
+  - [3.7 Dịch vụ indexing](#37-dịch-vụ-indexing)
+  - [3.8 Dataset Viewer và dịch vụ download](#38-dataset-viewer-và-dịch-vụ-download)
+- [4. Mô hình revision và manifest canonical](#4-mô-hình-revision-và-manifest-canonical)
+  - [4.1 Quy tắc đường dẫn repository](#41-quy-tắc-đường-dẫn-repository)
+  - [4.2 Định danh file](#42-định-danh-file)
+  - [4.3 Manifest canonical](#43-manifest-canonical)
+  - [4.4 Định danh revision](#44-định-danh-revision)
+- [5. Giao thức ingestion và phát hành chuẩn](#5-giao-thức-ingestion-và-phát-hành-chuẩn)
+  - [5.1 State machine](#51-state-machine)
+  - [5.2 Giao thức](#52-giao-thức)
+  - [5.3 Idempotency và concurrency](#53-idempotency-và-concurrency)
+  - [5.4 Lỗi và cơ chế bù trừ](#54-lỗi-và-cơ-chế-bù-trừ)
+- [6. Bố cục và quyền sở hữu dữ liệu lưu trữ](#6-bố-cục-và-quyền-sở-hữu-dữ-liệu-lưu-trữ)
+  - [6.1 Nguồn có thẩm quyền theo loại dữ liệu](#61-nguồn-có-thẩm-quyền-theo-loại-dữ-liệu)
+  - [6.2 Quy tắc lưu trữ](#62-quy-tắc-lưu-trữ)
+- [7. Giao thức query, download và export](#7-giao-thức-query-download-và-export)
+  - [7.1 Dataset Viewer query](#71-dataset-viewer-query)
+  - [7.2 Tải file gốc](#72-tải-file-gốc)
+  - [7.3 Export revision](#73-export-revision)
+- [8. Vòng đời, xóa và khôi phục thảm họa](#8-vòng-đời-xóa-và-khôi-phục-thảm-họa)
+  - [8.1 Vòng đời revision](#81-vòng-đời-revision)
+  - [8.2 Xóa dữ liệu](#82-xóa-dữ-liệu)
+  - [8.3 Backup và recovery](#83-backup-và-recovery)
+- [9. Yêu cầu bảo mật](#9-yêu-cầu-bảo-mật)
+- [10. Yêu cầu quan sát và vận hành](#10-yêu-cầu-quan-sát-và-vận-hành)
+- [11. Tiêu chí tuân thủ và nghiệm thu](#11-tiêu-chí-tuân-thủ-và-nghiệm-thu)
+- [12. Ví dụ sử dụng dành cho AI Researcher](#12-ví-dụ-sử-dụng-dành-cho-ai-researcher)
+  - [12.1 Dataset nghiên cứu tham khảo](#121-dataset-nghiên-cứu-tham-khảo)
+  - [12.2 Chuẩn bị repository để phát hành](#122-chuẩn-bị-repository-để-phát-hành)
+  - [12.3 Phát hành dataset qua ứng dụng web](#123-phát-hành-dataset-qua-ứng-dụng-web)
+  - [12.4 Kiểm tra revision đã phát hành](#124-kiểm-tra-revision-đã-phát-hành)
+  - [12.5 Sử dụng revision cố định trong thí nghiệm](#125-sử-dụng-revision-cố-định-trong-thí-nghiệm)
+  - [12.6 Phát hành revision tiếp theo](#126-phát-hành-revision-tiếp-theo)
+
 ## 1. Phạm vi
 
 Tài liệu này quy định kiến trúc đích và vòng đời dữ liệu bắt buộc của Data Studio. Đây là chuẩn kỹ
@@ -723,6 +771,234 @@ Bản triển khai chỉ được xem là tuân thủ đặc tả khi automated 
 
 Các yêu cầu trên định nghĩa kiến trúc chuẩn của Data Studio. Mọi sai khác phải có quyết định kiến
 trúc được thẩm định và PHẢI bảo toàn toàn bộ invariant kiến trúc tại Mục 2.1.
+
+## 12. Ví dụ sử dụng dành cho AI Researcher
+
+Phần này có tính tham khảo, minh họa trải nghiệm mong đợi của một AI Researcher. Các yêu cầu kiến
+trúc và toàn vẹn dữ liệu mang tính quy chuẩn trong những phần trước vẫn là nguồn có thẩm quyền.
+
+### 12.1 Dataset nghiên cứu tham khảo
+
+Các ví dụ sử dụng dataset nhận dạng bảng có tên `table-html-reasoning-v2`. Dataset ghép ảnh bảng đã
+render với HTML nguồn và nhãn suy luận cấu trúc logic được tạo theo quy trình có tính xác định.
+
+Workspace nguồn có cấu trúc:
+
+```text
+table-html-reasoning-v2/
+├── README.md
+├── metadata.json
+├── hf_parquet/
+│   ├── train-00000-of-00006.parquet
+│   ├── train-00001-of-00006.parquet
+│   ├── ...
+│   ├── train-00005-of-00006.parquet
+│   └── test-00000-of-00001.parquet
+├── images/
+│   └── 31.490 ảnh bảng PNG
+├── table_html/
+│   └── 31.490 nhãn HTML
+└── table_html_reasoning/
+    └── 31.490 nhãn reasoning JSON
+```
+
+Dataset sau khi phát hành có split dự kiến:
+
+| Split | Số mẫu | Mục đích |
+| --- | ---: | --- |
+| `train` | 28.341 | Huấn luyện và phát triển mô hình |
+| `test` | 3.149 | Đánh giá độc lập |
+| **Tổng** | **31.490** | |
+
+Mỗi dòng được phát hành chứa:
+
+| Cột | Ý nghĩa |
+| --- | --- |
+| `id` | Định danh mẫu ổn định |
+| `images` | Một hoặc nhiều ảnh bảng đã render |
+| `table_html` | HTML nguồn của bảng |
+| `reasoning` | Nhãn suy luận cấu trúc logic được encode dưới dạng JSON |
+| `num_rows`, `num_cols`, `num_cells` | Kích thước cấu trúc |
+| `has_merged_cells` | Bảng có sử dụng `rowspan` hoặc `colspan` hay không |
+| `validation_passed` | Kết quả validation cấu trúc có tính xác định |
+| `num_images` | Số ảnh liên kết với mẫu |
+
+### 12.2 Chuẩn bị repository để phát hành
+
+Researcher NÊN đặt Dataset Card tại thư mục gốc được upload và khai báo tường minh các Parquet shard.
+Khai báo tường minh giúp việc phân giải config/split có tính xác định và không phụ thuộc vào heuristic
+tên file.
+
+Ví dụ YAML front matter trong `README.md`:
+
+```yaml
+---
+license: other
+task_categories:
+  - image-to-text
+  - visual-question-answering
+language:
+  - en
+size_categories:
+  - 10K<n<100K
+pretty_name: Table HTML with Logical Reasoning
+configs:
+  - config_name: default
+    data_files:
+      - split: train
+        path: hf_parquet/train-*.parquet
+      - split: test
+        path: hf_parquet/test-*.parquet
+---
+```
+
+Dataset Card cũng NÊN mô tả:
+
+- mục đích của dataset và tác vụ mô hình dự kiến;
+- nguồn dữ liệu và thông tin license;
+- cách tạo split và cơ chế kiểm soát rò rỉ dữ liệu;
+- định nghĩa các cột;
+- phiên bản schema của reasoning label;
+- validation failure và giới hạn đã biết;
+- quy trình sinh nhãn.
+
+Trước khi upload, researcher NÊN kiểm tra:
+
+1. mọi đường dẫn tương đối dùng `/` và phân giải bên trong repository root;
+2. mọi Parquet shard có thể mở thành công;
+3. image hoặc auxiliary-file reference phân giải được tới file trong repository;
+4. sample ID ổn định và duy nhất;
+5. số lượng split bằng 28.341 dòng train và 3.149 dòng test;
+6. không có credential, đường dẫn tuyệt đối cục bộ, file tạm hoặc cache được sinh tự động.
+
+### 12.3 Phát hành dataset qua ứng dụng web
+
+1. Mở [TonAI Data Studio](https://3000--main--frontier--idp-lab.coder.vts-ai.space/) và đăng nhập.
+2. Chọn **New dataset**.
+3. Sử dụng thông tin repository, ví dụ:
+
+   ```text
+   Namespace: research
+   Dataset: table-html-reasoning-v2
+   Visibility: Internal
+   Description: Table images, HTML, and deterministic logical-structure reasoning labels
+   ```
+
+4. Mở repository và chọn **Upload revision**.
+5. Chọn thư mục `table-html-reasoning-v2/`. Thư mục gốc được chọn PHẢI chứa `README.md`.
+6. Nhập commit message có ý nghĩa, ví dụ:
+
+   ```text
+   Publish v2 with deterministic train/test split and logical reasoning labels
+   ```
+
+7. Bắt đầu phát hành và giữ upload session hoạt động cho đến khi toàn bộ source file được tiếp nhận.
+8. Chờ revision chuyển sang trạng thái `ready`.
+9. Ghi lại revision ID đầy đủ do Data Studio hiển thị.
+
+Researcher NÊN thấy revision đã phát hành có:
+
+- config `default`;
+- split `train` và `test`;
+- số dòng tương ứng là 28.341 và 3.149;
+- Dataset Card, cây file repository, schema, statistics, preview và lịch sử revision.
+
+Sai lệch số lượng split, thiếu shard, không phân giải được ảnh hoặc pattern `data_files` tường minh
+không hợp lệ PHẢI làm publication thất bại, không được chấp nhận như một dataset chưa đầy đủ.
+
+### 12.4 Kiểm tra revision đã phát hành
+
+Researcher NÊN thực hiện các kiểm tra sau trước khi dùng revision trong thí nghiệm:
+
+#### Dataset Card và revision
+
+- xác nhận title, task, language, license, nguồn và giới hạn;
+- xác nhận revision ID và publication message được hiển thị;
+- kiểm tra cây file có đủ bảy Parquet shard và auxiliary asset bắt buộc.
+
+#### Schema và số lượng split
+
+- mở config `default`;
+- so sánh số dòng `train` và `test` với giá trị dự kiến;
+- kiểm tra cột cấu trúc sử dụng kiểu numeric/boolean;
+- kiểm tra sự tồn tại của `images`, `table_html` và `reasoning`.
+
+#### Kiểm tra trực quan và cấu trúc
+
+- mở các dòng đại diện và so sánh ảnh đã render với `table_html`;
+- lọc `has_merged_cells = true` để kiểm tra ví dụ có `rowspan`/`colspan`;
+- lọc `validation_passed = false` để audit các bất thường nguồn được bảo toàn;
+- kiểm tra mẫu từ từng nhóm nguồn thay vì chỉ trang đầu tiên;
+- tải ít nhất một source object và xác minh checksum khi thực hiện release audit.
+
+Trường `reasoning` là một chuỗi JSON. Record sau khi decode được kỳ vọng có `schema_version`,
+`table_shape`, `cells`, `logical_grid`, `relations`, `reasoning_trace` và `validation`. Một vùng chứa
+nhiều top-level table CÓ THỂ decode thành danh sách reasoning record.
+
+### 12.5 Sử dụng revision cố định trong thí nghiệm
+
+Thí nghiệm PHẢI ghi revision ID đầy đủ của Data Studio thay vì alias có thể thay đổi như `main` hoặc
+`latest`. Thí nghiệm cũng NÊN ghi checksum của manifest và export.
+
+Ví dụ cấu hình thí nghiệm:
+
+```yaml
+dataset:
+  repository: research/table-html-reasoning-v2
+  revision: sha256:<full-canonical-revision-hash>
+  config: default
+  train_split: train
+  evaluation_split: test
+  manifest_sha256: <manifest-checksum>
+  export_sha256: <optional-export-checksum>
+```
+
+Sau khi tải và giải nén toàn bộ revision export vào `./table-html-reasoning-v2`, có thể đọc các
+Parquet file mà không thực thi code trong repository:
+
+```python
+import json
+
+from datasets import load_dataset
+
+data_files = {
+    "train": "./table-html-reasoning-v2/hf_parquet/train-*.parquet",
+    "test": "./table-html-reasoning-v2/hf_parquet/test-*.parquet",
+}
+dataset = load_dataset("parquet", data_files=data_files)
+
+assert dataset["train"].num_rows == 28_341
+assert dataset["test"].num_rows == 3_149
+
+sample = dataset["train"][0]
+decoded = json.loads(sample["reasoning"])
+reasoning_records = decoded if isinstance(decoded, list) else [decoded]
+
+print(sample["id"])
+print(reasoning_records[0]["table_shape"])
+print(reasoning_records[0]["logical_grid"][0])
+```
+
+Experiment record NÊN lưu thêm training code commit, model configuration, random seed và Data Studio
+revision ID. Đây là liên kết tối thiểu cần thiết để tái lập chính xác byte dataset đã được sử dụng.
+
+### 12.6 Phát hành revision tiếp theo
+
+Khi label, HTML, ảnh hoặc cách chia split thay đổi, researcher PHẢI phát hành một child revision thay
+vì thay thế revision đang ở trạng thái ready.
+
+Quy trình khuyến nghị:
+
+1. bắt đầu từ đúng parent revision được dùng để chuẩn bị thay đổi;
+2. cập nhật source file và Dataset Card;
+3. mô tả thay đổi schema hoặc quy trình sinh dữ liệu trong commit message;
+4. upload toàn bộ cây repository;
+5. xác minh parent revision dự kiến trước khi publication;
+6. lặp lại kiểm tra Card, schema, số lượng split, trực quan và validation;
+7. ghi revision ID đầy đủ mới vào cấu hình của các thí nghiệm tiếp theo.
+
+Các thí nghiệm đã hoàn thành trước đó vẫn được pin vào revision cũ. Nhờ đó, kết quả mô hình có thể
+được so sánh trực tiếp mà không nhập nhằng về nội dung dataset.
 
 ---
 
