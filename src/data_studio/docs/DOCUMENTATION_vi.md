@@ -1,5 +1,7 @@
 # Đặc tả kiến trúc và lưu trữ dữ liệu Data Studio
 
+[![Truy cập TonAI Data Studio](https://img.shields.io/badge/Live_Demo-TonAI_Data_Studio-16A34A?style=for-the-badge)](https://3000--main--frontier--idp-lab.coder.vts-ai.space/)
+
 **Ngôn ngữ:** Tiếng Việt | [English](./DOCUMENTATION_en.md)
 
 | Thuộc tính tài liệu | Giá trị |

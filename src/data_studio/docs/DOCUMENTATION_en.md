@@ -1,5 +1,7 @@
 # Data Studio Architecture and Data Storage Specification
 
+[![TonAI Data Studio live demo](https://img.shields.io/badge/Live_Demo-TonAI_Data_Studio-16A34A?style=for-the-badge)](https://3000--main--frontier--idp-lab.coder.vts-ai.space/)
+
 **Language:** English | [Tiếng Việt](./DOCUMENTATION_vi.md)
 
 | Document attribute | Value |
