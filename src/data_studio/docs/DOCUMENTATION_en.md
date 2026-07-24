@@ -724,3 +724,8 @@ An implementation conforms to this specification only if automated tests demonst
 
 These requirements define the standard Data Studio architecture. Deviations require a reviewed
 architecture decision and SHALL preserve all architectural invariants in Section 2.1.
+
+---
+
+For further articles and practical discussions on artificial intelligence, visit the
+[AI research blog](https://tungedng2710.github.io/blog/).

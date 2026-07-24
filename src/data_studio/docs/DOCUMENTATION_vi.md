@@ -723,3 +723,8 @@ Bản triển khai chỉ được xem là tuân thủ đặc tả khi automated 
 
 Các yêu cầu trên định nghĩa kiến trúc chuẩn của Data Studio. Mọi sai khác phải có quyết định kiến
 trúc được thẩm định và PHẢI bảo toàn toàn bộ invariant kiến trúc tại Mục 2.1.
+
+---
+
+Nếu bạn quan tâm thêm đến các chủ đề, nghiên cứu và vấn đề thực tiễn liên quan đến AI, hãy ghé thăm
+[blog về AI](https://tungedng2710.github.io/blog/).
