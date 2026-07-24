@@ -1,6 +1,7 @@
 # Đặc tả kiến trúc và lưu trữ dữ liệu Data Studio
 
-**Ngôn ngữ:** Tiếng Việt | [English](./DOCUMENTATION_en.md)
+[![Tài liệu tiếng Anh](https://img.shields.io/badge/Language-English-2563EB?style=for-the-badge)](./DOCUMENTATION_en.md)
+[![Tài liệu tiếng Việt](https://img.shields.io/badge/Ng%C3%B4n_ng%E1%BB%AF-Ti%E1%BA%BFng_Vi%E1%BB%87t-DC2626?style=for-the-badge)](./DOCUMENTATION_vi.md)
 
 | Thuộc tính tài liệu | Giá trị |
 | --- | --- |
