@@ -20,6 +20,7 @@ compatibility claims are intentionally narrower than the complete MVP; see [Curr
 - Parquet, CSV, TSV, JSON, JSONL, TXT, ImageFolder, and image metadata layouts
 - Bounded row previews, nested JSON values, Arrow-compatible schema display, and sample statistics
 - Content-addressed RustFS objects, deterministic manifests, and idempotent immutable revisions
+- Isolated internal Git repositories with DVC pointers and durable DVC cache publication
 - Byte-identical streaming downloads through the authorized API boundary
 - URL-addressable revision/config/split views and a virtualized React data table
 - PostgreSQL migrations, Redis/Celery worker wiring, and local Docker Compose deployment
@@ -36,7 +37,8 @@ React + Vite + Tailwind (apps/web)
   ▼
 FastAPI application service (apps/api)
   ├── PostgreSQL: repositories, revisions, layouts, previews, jobs
-  ├── RustFS S3: immutable source objects and deterministic manifests
+  ├── Git+DVC: immutable revision metadata and source-tree pointers
+  ├── RustFS S3: immutable source objects, manifests, and the DVC remote cache
   ├── Redis/Celery: worker boundary (health task in this slice)
   └── PyArrow: bounded Parquet/schema inspection
 ```
@@ -91,8 +93,8 @@ docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --buil
 
 Open <http://localhost:3000>. The RustFS console is available at
 <http://localhost:9001/rustfs/console/> (replace `9001` with `RUSTFS_CONSOLE_PORT` when overridden).
-Migrations run before the API starts. Named volumes keep PostgreSQL, Redis, RustFS, and
-upload-staging data across restarts.
+Migrations run before the API starts. Named volumes keep PostgreSQL, Redis, RustFS, internal Git
+repositories, and upload-staging data across restarts.
 
 To rebuild only the web interface without starting or recreating API, database, or RustFS
 containers:
@@ -194,6 +196,9 @@ Backend variables use the `DATA_STUDIO_` prefix. Important settings include:
 | `DATA_STUDIO_STORAGE_BACKEND` | `local` | `local` or `s3` |
 | `DATA_STUDIO_STORAGE_ROOT` | `./data/objects` | Local object adapter root |
 | `DATA_STUDIO_STAGING_ROOT` | `./data/uploads` | Private streamed-upload staging root |
+| `DATA_STUDIO_VERSIONING_ENABLED` | `true` | Publish every revision through internal Git+DVC |
+| `DATA_STUDIO_VERSIONING_ROOT` | `./data/repositories` | Internal Git repositories and local DVC remote |
+| `DATA_STUDIO_DVC_REMOTE_URL` | derived | Optional DVC remote override; defaults to RustFS for S3 |
 | `DATA_STUDIO_S3_ENDPOINT_URL` | `http://rustfs:9000` | RustFS S3 endpoint |
 | `DATA_STUDIO_S3_BUCKET` | `datasets` | Source/derived object bucket |
 | `DATA_STUDIO_REDIS_URL` | `redis://localhost:6379/0` | Celery broker/result URL |
@@ -208,8 +213,8 @@ Backend variables use the `DATA_STUDIO_` prefix. Important settings include:
 
 `.env.example` contains placeholders only. RustFS credentials never reach the browser.
 The three upload resource caps accept `0` to disable that cap for a trusted private deployment.
-`RUSTFS_DATA_PATH` and `UPLOAD_STAGING_PATH` can bind persistent data to host directories with
-enough capacity; omit them to use Docker named volumes.
+`RUSTFS_DATA_PATH`, `UPLOAD_STAGING_PATH`, and `VERSIONING_DATA_PATH` can bind persistent data to
+host directories with enough capacity; omit them to use Docker named volumes.
 
 ## Verification
 
@@ -228,9 +233,10 @@ npm test
 npm run build
 ```
 
-The integration suite proves create → upload → validate → publish → preview → byte-identical download,
-plus role enforcement and idempotent retries. Unit fixtures cover card YAML, sanitization, traversal,
-split/config/shard detection, signature checks, and deterministic manifests.
+The integration suite proves create → upload → validate → DVC push → Git publication → preview →
+byte-identical download, plus role enforcement and idempotent retries. Unit fixtures cover card YAML,
+sanitization, traversal, split/config/shard detection, signature checks, deterministic manifests,
+immutable revision refs, and byte-identical DVC restore.
 
 ## Security notes
 
@@ -251,8 +257,6 @@ The following items from the complete `AGENT.md` MVP are deliberately not claime
 
 - Ingestion and indexing currently complete inline in the API process. Celery/Redis are deployed and
   a smoke task exists, but the staged pipeline has not yet moved to retryable worker tasks.
-- Revisions are immutable deterministic manifests with content-addressed RustFS source objects, but
-  internal Git commits and DVC pointer/cache push are the next versioning slice.
 - Preview rows are a bounded persisted sample. DuckDB pushdown, full-dataset cursors, global sort,
   and indexed text search are not implemented yet.
 - Authentication supports local accounts, owner authorization, and scoped personal API tokens;

@@ -40,6 +40,13 @@ services:
     volumes:
       - "${UPLOAD_STAGING_PATH:-upload_staging}:/uploads"
 
+  versioning-permissions:
+    image: alpine:3.22
+    user: root
+    command: ["chown", "-R", "10001:10001", "/versioning"]
+    volumes:
+      - "${VERSIONING_DATA_PATH:-versioning_data}:/versioning"
+
   rustfs:
     image: rustfs/rustfs:latest
     depends_on:
@@ -70,6 +77,8 @@ services:
         condition: service_started
       upload-permissions:
         condition: service_completed_successfully
+      versioning-permissions:
+        condition: service_completed_successfully
     user: "10001:10001"
     environment:
       DATA_STUDIO_ENVIRONMENT: development
@@ -82,6 +91,7 @@ services:
       DATA_STUDIO_S3_BUCKET: datasets
       DATA_STUDIO_REDIS_URL: redis://redis:6379/0
       DATA_STUDIO_STAGING_ROOT: /var/lib/data-studio/uploads
+      DATA_STUDIO_VERSIONING_ROOT: /var/lib/data-studio/versioning
       TMPDIR: /var/lib/data-studio/uploads
       DATA_STUDIO_MAX_UPLOAD_BYTES: ${DATA_STUDIO_MAX_UPLOAD_BYTES:-2147483648}
       DATA_STUDIO_MAX_FILE_BYTES: ${DATA_STUDIO_MAX_FILE_BYTES:-536870912}
@@ -99,6 +109,7 @@ services:
       start_period: 10s
     volumes:
       - "${UPLOAD_STAGING_PATH:-upload_staging}:/var/lib/data-studio/uploads"
+      - "${VERSIONING_DATA_PATH:-versioning_data}:/var/lib/data-studio/versioning"
     restart: unless-stopped
 
   worker:
@@ -113,6 +124,8 @@ services:
         condition: service_started
       upload-permissions:
         condition: service_completed_successfully
+      versioning-permissions:
+        condition: service_completed_successfully
     user: "10001:10001"
     environment:
       DATA_STUDIO_ENVIRONMENT: development
@@ -124,6 +137,7 @@ services:
       DATA_STUDIO_S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:-local-development-only}
       DATA_STUDIO_REDIS_URL: redis://redis:6379/0
       DATA_STUDIO_STAGING_ROOT: /var/lib/data-studio/uploads
+      DATA_STUDIO_VERSIONING_ROOT: /var/lib/data-studio/versioning
       TMPDIR: /var/lib/data-studio/uploads
       DATA_STUDIO_MAX_UPLOAD_BYTES: ${DATA_STUDIO_MAX_UPLOAD_BYTES:-2147483648}
       DATA_STUDIO_MAX_FILE_BYTES: ${DATA_STUDIO_MAX_FILE_BYTES:-536870912}
@@ -131,6 +145,7 @@ services:
       DATA_STUDIO_AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-development-only-change-me}
     volumes:
       - "${UPLOAD_STAGING_PATH:-upload_staging}:/var/lib/data-studio/uploads"
+      - "${VERSIONING_DATA_PATH:-versioning_data}:/var/lib/data-studio/versioning"
     restart: unless-stopped
 
   web:
@@ -149,3 +164,4 @@ volumes:
   redis_data:
   rustfs_data:
   upload_staging:
+  versioning_data:

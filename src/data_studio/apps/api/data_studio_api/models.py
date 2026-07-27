@@ -117,6 +117,7 @@ class DatasetRevision(Base):
     commit_message: Mapped[str] = mapped_column(String(500), default="Upload dataset")
     git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
     dvc_revision: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_object_set_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     manifest_object_key: Mapped[str] = mapped_column(String(1024))
     manifest_sha256: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[RevisionStatus] = mapped_column(

@@ -5,6 +5,7 @@ os.environ["DATA_STUDIO_DATABASE_URL"] = "sqlite:///./data/test-data-studio.db"
 os.environ["DATA_STUDIO_STORAGE_BACKEND"] = "local"
 os.environ["DATA_STUDIO_STORAGE_ROOT"] = "./data/test-objects"
 os.environ["DATA_STUDIO_STAGING_ROOT"] = "./data/test-uploads"
+os.environ["DATA_STUDIO_VERSIONING_ROOT"] = "./data/test-repositories"
 
 import pytest
 from data_studio_api.config import get_settings
@@ -18,7 +19,7 @@ def clean_state() -> None:
     settings = get_settings()
     Path("data").mkdir(parents=True, exist_ok=True)
     Base.metadata.drop_all(bind=engine)
-    for root in (settings.storage_root, settings.staging_root):
+    for root in (settings.storage_root, settings.staging_root, settings.versioning_root):
         if root.exists():
             import shutil
 

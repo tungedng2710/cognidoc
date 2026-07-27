@@ -74,6 +74,9 @@ class RevisionSummary(OrmModel):
     revision_id: str
     branch: str
     commit_message: str
+    git_commit: str | None
+    dvc_revision: str | None
+    source_object_set_checksum: str | None
     status: RevisionStatus
     manifest_sha256: str
     error_code: str | None

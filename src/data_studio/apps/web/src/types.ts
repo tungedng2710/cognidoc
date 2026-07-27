@@ -3,6 +3,9 @@ export type RevisionStatus = "uploading" | "validating" | "indexing" | "ready" |
 
 export interface RevisionSummary {
   revision_id: string;
+  git_commit?: string | null;
+  dvc_revision?: string | null;
+  source_object_set_checksum?: string | null;
   branch: string;
   commit_message: string;
   status: RevisionStatus;

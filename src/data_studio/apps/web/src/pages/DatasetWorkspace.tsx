@@ -514,6 +514,12 @@ function VersionsTab({ revisions, selected }: { revisions: RevisionSummary[]; se
               <span className="text-xs text-slate-400">{new Date(revision.created_at).toLocaleString()}</span>
             </span>
             <span className="mt-1 block text-sm text-slate-600">{revision.commit_message}</span>
+            {revision.git_commit || revision.dvc_revision ? (
+              <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-slate-400">
+                {revision.git_commit ? <span>git {revision.git_commit.slice(0, 12)}</span> : null}
+                {revision.dvc_revision ? <span>dvc {revision.dvc_revision}</span> : null}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

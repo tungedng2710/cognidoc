@@ -72,6 +72,9 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     revision = uploaded["revision"]
 
     assert revision["status"] == "ready"
+    assert len(revision["git_commit"]) == 40
+    assert revision["dvc_revision"].startswith("md5:")
+    assert len(revision["source_object_set_checksum"]) == 64
     assert revision["card_metadata"]["license"] == "mit"
     assert [config["name"] for config in revision["configs"]] == ["default"]
     assert {split["name"] for split in revision["configs"][0]["splits"]} == {"train", "test"}

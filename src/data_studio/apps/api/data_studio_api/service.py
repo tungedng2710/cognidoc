@@ -34,6 +34,7 @@ from .models import (
 )
 from .schemas import DatasetCreate, DatasetPatch
 from .storage import ObjectStorage
+from .versioning import GitDVCRevisionService
 
 
 def _repository_query(namespace: str, slug: str) -> Select[tuple[DatasetRepository]]:
@@ -98,10 +99,19 @@ def resolve_revision(
 
 
 class DatasetService:
-    def __init__(self, db: Session, storage: ObjectStorage, settings: Settings) -> None:
+    def __init__(
+        self,
+        db: Session,
+        storage: ObjectStorage,
+        settings: Settings,
+        versioning: GitDVCRevisionService | None = None,
+    ) -> None:
         self.db = db
         self.storage = storage
         self.settings = settings
+        self.versioning = versioning or (
+            GitDVCRevisionService(settings) if settings.versioning_enabled else None
+        )
 
     def list_repositories(self) -> Sequence[DatasetRepository]:
         return self.db.scalars(
@@ -159,6 +169,8 @@ class DatasetService:
         self.db.execute(delete(ProcessingJob).where(ProcessingJob.repository_id == repository.id))
         self.db.execute(delete(DatasetRepository).where(DatasetRepository.id == repository.id))
         self.db.commit()
+        if self.versioning:
+            self.versioning.delete_repository(repository.id)
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
@@ -420,6 +432,21 @@ class DatasetService:
         new_tree = [(item.path, item.size_bytes, item.sha256) for item in file_entries]
         return latest if old_tree == new_tree else None
 
+    @staticmethod
+    def _source_object_set_checksum(file_entries: list[ManifestFile]) -> str:
+        inventory = [
+            {
+                "path": item.path,
+                "size_bytes": item.size_bytes,
+                "sha256": item.sha256,
+            }
+            for item in sorted(file_entries, key=lambda item: item.path)
+        ]
+        encoded = json.dumps(
+            inventory, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
     def complete_upload(
         self,
         upload_id: str,
@@ -489,6 +516,7 @@ class DatasetService:
                 parent.revision_id if parent else None,
             )
             revision_id = manifest_sha[:12]
+            source_object_set_checksum = self._source_object_set_checksum(entries)
             derived_prefix = (
                 f"datasets/derived/{repository.namespace}/{repository.slug}/{revision_id}"
             )
@@ -499,6 +527,7 @@ class DatasetService:
                 revision_id=revision_id,
                 branch=repository.default_branch,
                 commit_message=upload.commit_message,
+                source_object_set_checksum=source_object_set_checksum,
                 manifest_object_key=manifest_key,
                 manifest_sha256=manifest_sha,
                 status=RevisionStatus.indexing,
@@ -524,6 +553,25 @@ class DatasetService:
                     )
                 )
             self.storage.put_bytes(manifest_key, manifest_bytes, "application/json")
+
+            if self.versioning:
+                binding = self.versioning.publish(
+                    repository_id=repository.id,
+                    branch=repository.default_branch,
+                    revision_id=revision_id,
+                    parent_revision_id=parent.revision_id if parent else None,
+                    parent_git_commit=parent.git_commit if parent else None,
+                    commit_message=upload.commit_message,
+                    manifest_bytes=manifest_bytes,
+                    manifest_sha256=manifest_sha,
+                    source_object_set_checksum=source_object_set_checksum,
+                    staged_files=staged_files,
+                    card_markdown=card.markdown,
+                    card_html=card.html,
+                    card_metadata=card.metadata,
+                )
+                revision.git_commit = binding.git_commit
+                revision.dvc_revision = binding.dvc_revision
 
             self._save_layout(
                 revision,

@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     storage_root: Path = Path("./data/objects")
     staging_root: Path = Path("./data/uploads")
+    versioning_enabled: bool = True
+    versioning_root: Path = Path("./data/repositories")
+    dvc_remote_url: str | None = None
+    dvc_remote_name: str = "storage"
+    git_executable: str = "git"
+    dvc_executable: str = "dvc"
+    versioning_command_timeout_seconds: int = Field(default=30 * 60, ge=30, le=24 * 60 * 60)
     s3_endpoint_url: str = "http://rustfs:9000"
     s3_access_key: str = "rustfsadmin"
     s3_secret_key: str = "rustfsadmin"
