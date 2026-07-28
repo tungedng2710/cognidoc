@@ -15,12 +15,13 @@ import { Link } from "react-router-dom";
 import { AccountControls } from "../components/Auth";
 import { Brand } from "../components/Brand";
 
-function CodeBlock({ children }: { children: string }) {
+function CodeBlock({ children, label }: { children: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const code = children.trim();
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(children);
+      await navigator.clipboard.writeText(code);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2_000);
     } catch {
@@ -29,19 +30,26 @@ function CodeBlock({ children }: { children: string }) {
   };
 
   return (
-    <div className="relative mt-4">
-      <pre className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 p-4 pr-24 text-[13px] leading-6 text-cyan-100 shadow-inner">
-        <code>{children}</code>
-      </pre>
-      <button
-        className="absolute top-3 right-3 inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/8 px-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/15 hover:text-white"
-        type="button"
-        onClick={() => void copy()}
-        aria-label="Copy code"
-      >
-        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        {copied ? "Copied" : "Copy"}
-      </button>
+    <div className="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-inner">
+      {label ? (
+        <div className="border-b border-white/8 bg-white/4 px-4 py-2 text-[10px] font-bold tracking-[0.14em] text-slate-400 uppercase">
+          {label}
+        </div>
+      ) : null}
+      <div className="relative">
+        <pre className="max-w-full overflow-x-auto p-4 pr-24 font-mono text-[12px] leading-5 text-cyan-100">
+          <code>{code}</code>
+        </pre>
+        <button
+          className="absolute top-2.5 right-2.5 inline-flex min-h-7 items-center gap-1.5 rounded-md border border-white/10 bg-white/8 px-2 text-[11px] font-semibold text-slate-300 transition hover:bg-white/15 hover:text-white"
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy code"
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -116,7 +124,7 @@ export function ApiDocsPage() {
                 <li>Copy the token when it appears—it is shown only once.</li>
                 <li>Paste it below and choose the dataset path you want to use.</li>
               </ol>
-              <CodeBlock>{`export API=${apiRoot}
+              <CodeBlock>{String.raw`export API=${apiRoot}
 export TOKEN='ds_pat_paste_your_token_here'
 export DATASET=owner/sentiment-demo
 
@@ -133,8 +141,7 @@ ds_json() {
   ds \
     --header 'Content-Type: application/json' \
     "$@"
-}
-`}</CodeBlock>
+}`}</CodeBlock>
               <p className="mt-4 text-sm leading-6 text-slate-500">
                 The <InlineCode>ds</InlineCode> helper adds your token automatically.
                 <InlineCode>ds_json</InlineCode> also marks a request as JSON. The examples use
@@ -152,7 +159,7 @@ ds_json() {
                 <InlineCode>private</InlineCode>, <InlineCode>internal</InlineCode>, or
                 <InlineCode>public</InlineCode>.
               </p>
-              <CodeBlock>{`ds_json \
+              <CodeBlock>{String.raw`ds_json \
   --data '{
     "namespace": "owner",
     "slug": "sentiment-demo",
@@ -172,22 +179,20 @@ ds_json() {
                 An upload has three small steps. This example sends a Dataset Card and one Parquet
                 file while preserving their repository paths.
               </p>
-              <CodeBlock>{`UPLOAD=$(
+              <CodeBlock label="Step 1 · Open an upload">{String.raw`UPLOAD=$(
   ds_json \
     --data '{"commit_message":"Initial import"}' \
     "$API/datasets/$DATASET/uploads" \
   | jq --raw-output '.id'
-)
-
-ds \
+)`}</CodeBlock>
+              <CodeBlock label="Step 2 · Send files">{String.raw`ds \
   --form 'files=@README.md' \
   --form 'paths=README.md' \
   --form 'files=@data/train.parquet' \
   --form 'paths=data/train.parquet' \
   "$API/uploads/$UPLOAD/files" \
-  | jq
-
-REVISION=$(
+  | jq`}</CodeBlock>
+              <CodeBlock label="Step 3 · Publish">{String.raw`REVISION=$(
   ds_json \
     --data '{"expected_file_count":2}' \
     "$API/uploads/$UPLOAD/complete?include_files=false" \
@@ -211,23 +216,18 @@ echo "Published revision: $REVISION"`}</CodeBlock>
                 List what you can access, inspect the detected configs and splits, then fetch ten
                 preview rows.
               </p>
-              <CodeBlock>{`# Visible datasets
-ds \
+              <CodeBlock label="Visible datasets">{String.raw`ds \
   "$API/datasets" \
   | jq '.items[] | {
       name: (.namespace + "/" + .slug),
       visibility
-    }'
-
-# Available configs and splits
-ds \
+    }'`}</CodeBlock>
+              <CodeBlock label="Configs and splits">{String.raw`ds \
   --get \
   --data-urlencode 'revision=main' \
   "$API/datasets/$DATASET/configs" \
-  | jq
-
-# First 10 preview rows
-ds \
+  | jq`}</CodeBlock>
+              <CodeBlock label="First 10 preview rows">{String.raw`ds \
   --get \
   --data-urlencode 'revision=main' \
   --data-urlencode 'limit=10' \
@@ -244,7 +244,7 @@ ds \
                 Use <InlineCode>main</InlineCode> for the latest version, or replace it with an
                 immutable revision ID for a reproducible download.
               </p>
-              <CodeBlock>{`ds \
+              <CodeBlock>{String.raw`ds \
   --location \
   --output sentiment-demo.zip \
   "$API/datasets/$DATASET/archive/main"

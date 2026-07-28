@@ -45,7 +45,13 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Start using the API in minutes" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "3. Upload and publish" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "5. Download a repository" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(5);
+    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(9);
+    const examples = Array.from(document.querySelectorAll("pre code")).map(
+      (element) => element.textContent ?? "",
+    );
+    const uploadFiles = examples.find((example) => example.includes("files=@README.md"));
+    expect(uploadFiles?.split("\n")).toContain("  --form 'files=@README.md' \\");
+    expect(examples.every((example) => example.split("\n").every((line) => line.length < 88))).toBe(true);
   });
 
   it("lets a signed-in user manage account settings while keeping username read-only", async () => {
