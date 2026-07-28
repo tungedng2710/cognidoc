@@ -1,267 +1,319 @@
-# Data Studio API usage
+# Data Studio API recipes
 
-TonAI Data Studio exposes a REST API under `/api/v1`. It accepts Hugging Face-compatible
-repository folders, but it is not a drop-in implementation of the `huggingface_hub` protocol.
+TonAI Data Studio has a REST API under `/api/v1`. This guide starts with a short
+setup, then shows one copy-pasteable recipe per task.
 
-The examples below assume the Compose deployment is available at `http://localhost:3000` and that
-`curl` and `jq` are installed:
+The examples use `curl` and `jq` against the Compose deployment at
+`http://localhost:3000`. Change `STUDIO` if your deployment uses another address.
 
-```bash
-export DATA_STUDIO_URL=http://localhost:3000
-export DATA_STUDIO_API="$DATA_STUDIO_URL/api/v1"
-```
+## Quick setup
 
-For a direct API development process on port 8000, set `DATA_STUDIO_URL=http://localhost:8000`.
-Interactive OpenAPI documentation is available at `http://localhost:8000/docs`.
+The easiest way to get a token is through the web app:
 
-## Authentication
+1. Sign in.
+2. Open **Account settings**.
+3. Under **Personal API tokens**, generate a token and copy it immediately.
 
-Public datasets can be read without credentials. Creating or changing a dataset requires either a
-signed browser session or a personal API token. Private datasets can only be read by their owner or
-a workspace administrator; internal datasets can be read by any signed-in user.
-
-### Create an account or sign in
-
-The following commands keep the signed session in a local cookie jar:
+Set three variables, then define two helpers so every later command stays short:
 
 ```bash
-curl --fail-with-body --silent --show-error \
-  --cookie-jar data-studio.cookies \
-  --header 'Content-Type: application/json' \
-  --data '{"username":"owner","password":"replace-with-a-strong-password"}' \
-  "$DATA_STUDIO_API/auth/register" | jq
-```
+export STUDIO=http://localhost:3000
+export API="$STUDIO/api/v1"
+export TOKEN='ds_pat_paste_your_token_here'
+export DATASET=owner/sentiment-demo
 
-For an existing account:
+ds() {
+  curl \
+    --fail-with-body \
+    --silent \
+    --show-error \
+    --header "Authorization: Bearer $TOKEN" \
+    "$@"
+}
 
-```bash
-curl --fail-with-body --silent --show-error \
-  --cookie-jar data-studio.cookies \
-  --header 'Content-Type: application/json' \
-  --data '{"username":"owner","password":"replace-with-a-strong-password"}' \
-  "$DATA_STUDIO_API/auth/login" | jq
-```
-
-The first registered account is the workspace administrator.
-
-### Create a personal API token
-
-Token creation requires a signed session. The raw token is returned once, so store it in a secret
-manager and never commit it to source control.
-
-```bash
-export DATA_STUDIO_TOKEN="$(
-  curl --fail-with-body --silent --show-error \
-    --cookie data-studio.cookies \
+ds_json() {
+  ds \
     --header 'Content-Type: application/json' \
-    --data '{"name":"local-cli","scopes":["read","write"]}' \
-    "$DATA_STUDIO_API/auth/tokens" | jq -er '.token'
-)"
+    "$@"
+}
 ```
 
-Use the token on subsequent requests:
+- `ds` sends an authenticated request.
+- `ds_json` does the same and marks the body as JSON.
+- `jq` only formats or selects fields from a response; the API does not require it.
 
-```bash
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/auth/me" | jq
-```
-
-Use only the `read` scope for clients that do not create, upload, update, or delete datasets.
+Keep tokens out of source control and shell scripts that will be shared. Use a
+`read`-only token when a client never creates, uploads, updates, or deletes datasets.
 
 ## Create a dataset
 
+The namespace is usually your username. Visibility can be `private`, `internal`,
+or `public`.
+
 ```bash
-curl --fail-with-body --silent --show-error \
-  --request POST \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  --header 'Content-Type: application/json' \
+ds_json \
   --data '{
-    "namespace":"owner",
-    "slug":"sentiment-demo",
-    "visibility":"private",
-    "description":"Sentiment examples"
+    "namespace": "owner",
+    "slug": "sentiment-demo",
+    "visibility": "private",
+    "description": "Sentiment examples"
   }' \
-  "$DATA_STUDIO_API/datasets" | jq
+  "$API/datasets" \
+  | jq
 ```
 
-Valid visibility values are `private`, `internal`, and `public`.
+The `--data` flag makes this a `POST` request, so a separate `--request POST` is
+unnecessary.
 
-## Upload a repository folder
+## Upload files and publish a revision
 
-Uploading is a three-step transaction: create an upload, send its files and relative paths, then
-publish it. The API preserves each supplied relative POSIX path.
+Uploading has three steps: open an upload, send files, then publish it.
 
-### 1. Create an upload
+### 1. Open an upload
 
 ```bash
-export UPLOAD_ID="$(
-  curl --fail-with-body --silent --show-error \
-    --request POST \
-    --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-    --header 'Content-Type: application/json' \
+UPLOAD=$(
+  ds_json \
     --data '{"commit_message":"Initial import"}' \
-    "$DATA_STUDIO_API/datasets/owner/sentiment-demo/uploads" | jq -er '.id'
-)"
+    "$API/datasets/$DATASET/uploads" \
+  | jq --raw-output '.id'
+)
 ```
 
 ### 2. Send files
 
-Every `files` entry must have a `paths` entry at the same position. Paths are relative to the root
-of the repository and must use `/`, even when the client runs on Windows.
+Each `files` entry needs a matching `paths` entry. Paths are relative to the
+repository root and always use `/`.
 
 ```bash
-curl --fail-with-body --silent --show-error \
-  --request POST \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  --form 'files=@README.md;type=text/markdown' \
-  --form 'files=@data/train.parquet;type=application/vnd.apache.parquet' \
+ds \
+  --form 'files=@README.md' \
   --form 'paths=README.md' \
+  --form 'files=@data/train.parquet' \
   --form 'paths=data/train.parquet' \
-  "$DATA_STUDIO_API/uploads/$UPLOAD_ID/files" | jq
-```
-
-Large folders may be sent in multiple requests. Do not send the same repository path twice.
-
-### 3. Publish the revision
-
-```bash
-export REVISION_ID="$(
-  curl --fail-with-body --silent --show-error \
-    --request POST \
-    --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-    --header 'Content-Type: application/json' \
-    --data '{"expected_file_count":2}' \
-    "$DATA_STUDIO_API/uploads/$UPLOAD_ID/complete?include_files=false" \
-    | tee /tmp/data-studio-revision.json \
-    | jq -er '.revision_id'
-)"
-```
-
-Publishing is content-addressed and idempotent: retrying the same completed repository tree returns
-the existing immutable revision.
-
-## Browse datasets and revisions
-
-List all datasets visible to the current credential:
-
-```bash
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets" | jq
-```
-
-Read repository metadata and revision history:
-
-```bash
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo" | jq
-
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo/revisions" | jq
-```
-
-Page through repository files:
-
-```bash
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo/tree/$REVISION_ID/page?offset=0&limit=100" \
+  "$API/uploads/$UPLOAD/files" \
   | jq
 ```
 
-## Query preview rows
+Large folders can be split across several requests. Do not send the same
+repository path twice.
 
-First list detected configs and splits:
+### 3. Publish
 
 ```bash
-curl --fail-with-body --silent --show-error \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo/configs?revision=$REVISION_ID" | jq
+REVISION=$(
+  ds_json \
+    --data '{"expected_file_count":2}' \
+    "$API/uploads/$UPLOAD/complete?include_files=false" \
+  | jq --raw-output '.revision_id'
+)
+
+echo "Published revision: $REVISION"
 ```
 
-Then request a page from a config and split:
+Publishing is content-addressed and idempotent. Retrying the same completed
+repository tree returns the existing immutable revision.
+
+## Browse datasets
+
+List every dataset visible to the current token:
 
 ```bash
-curl --fail-with-body --silent --show-error --get \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  --data-urlencode "revision=$REVISION_ID" \
+ds \
+  "$API/datasets" \
+  | jq '.items[] | {
+      name: (.namespace + "/" + .slug),
+      visibility,
+      description
+    }'
+```
+
+Read one dataset or its revision history:
+
+```bash
+ds \
+  "$API/datasets/$DATASET" \
+  | jq
+
+ds \
+  "$API/datasets/$DATASET/revisions" \
+  | jq
+```
+
+List repository files:
+
+```bash
+ds \
+  --get \
   --data-urlencode 'offset=0' \
-  --data-urlencode 'limit=50' \
+  --data-urlencode 'limit=100' \
+  "$API/datasets/$DATASET/tree/main/page" \
+  | jq
+```
+
+Use `main` for the latest revision or replace it with an immutable revision ID.
+
+## Preview rows
+
+First discover the config and split names detected from the repository:
+
+```bash
+ds \
+  --get \
+  --data-urlencode 'revision=main' \
+  "$API/datasets/$DATASET/configs" \
+  | jq
+```
+
+Then fetch a small page. This example assumes the config is `default` and the
+split is `train`:
+
+```bash
+ds \
+  --get \
+  --data-urlencode 'revision=main' \
+  --data-urlencode 'limit=10' \
+  "$API/datasets/$DATASET/viewer/default/train" \
+  | jq '.rows'
+```
+
+Select columns and filter rows when needed:
+
+```bash
+ds \
+  --get \
+  --data-urlencode 'revision=main' \
   --data-urlencode 'columns=text,label' \
   --data-urlencode 'filter={"column":"label","op":"eq","value":1}' \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo/viewer/default/train" | jq
+  "$API/datasets/$DATASET/viewer/default/train" \
+  | jq '.rows'
 ```
 
-Supported filter operations are `eq`, `ne`, `contains`, `gt`, `gte`, `lt`, and `lte`. Preview rows
-are a bounded sample; inspect the response `capabilities` before assuming full-dataset operations.
+Supported filter operations are `eq`, `ne`, `contains`, `gt`, `gte`, `lt`, and
+`lte`. Preview rows are a bounded sample; check `capabilities` in the response
+before assuming a full-dataset operation.
 
-## Download files or a complete revision
+## Download data
 
-### Download one source file
+### Download the complete repository
 
-```bash
-curl --fail-with-body --location \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  --output train.parquet \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo/blob/$REVISION_ID/data/train.parquet"
-```
-
-Source downloads are streamed and retain the uploaded bytes.
-
-### Pull a complete repository
-
-Download the complete immutable source tree as a ZIP archive. The archive contains every uploaded
-file, including `README.md`, `metadata.*`, data shards, and referenced media, at its original
-repository path. Set `REVISION_ID` to an immutable revision ID for a reproducible snapshot, or use
-`main` to pull the latest revision.
+This downloads the latest source tree as a ZIP while preserving every original path:
 
 ```bash
-export DATASET_PATH=owner/sentiment-demo
-export REVISION_ID=main
-curl --fail-with-body --location \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
+ds \
+  --location \
   --output sentiment-demo.zip \
-  "$DATA_STUDIO_API/datasets/$DATASET_PATH/archive/$REVISION_ID"
+  "$API/datasets/$DATASET/archive/main"
+
+unzip -l sentiment-demo.zip
 ```
 
-Public datasets do not require credentials; remove the `Authorization` header when pulling one.
-Private datasets require an owner or administrator token, while internal datasets require a token
-from any signed-in user. The Studio accepts Hugging Face-compatible layouts but is not a drop-in
-implementation of the Hub download protocol, so `hf download` cannot pull these repositories.
+For a reproducible snapshot, replace `main` with an immutable revision ID.
+
+### Download one file
+
+```bash
+ds \
+  --location \
+  --output train.parquet \
+  "$API/datasets/$DATASET/blob/main/data/train.parquet"
+```
+
+Public datasets do not need a token. Download one with ordinary `curl`:
+
+```bash
+curl \
+  --fail-with-body \
+  --location \
+  --output public-data.zip \
+  "$API/datasets/public/demo/archive/main"
+```
+
+The Studio preserves Hugging Face-compatible layouts but does not implement the
+Hub download protocol, so use these REST endpoints instead of `hf download`.
 
 ## Update or delete a dataset
 
+Update only the fields that need to change:
+
 ```bash
-curl --fail-with-body --silent --show-error \
+ds_json \
   --request PATCH \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  --header 'Content-Type: application/json' \
-  --data '{"slug":"sentiment-v2","description":"Updated description","visibility":"internal"}' \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo" | jq
+  --data '{
+    "description": "Updated description",
+    "visibility": "internal"
+  }' \
+  "$API/datasets/$DATASET" \
+  | jq
 ```
 
-Changing `slug` renames the dataset and changes its URL. Existing immutable revisions and downloads
-remain available under the new repository URL.
-
-Deletion permanently removes repository metadata and its source and derived object prefixes:
+Renaming changes the URL. Update `DATASET` after changing the slug:
 
 ```bash
-curl --fail-with-body --silent --show-error \
-  --request DELETE \
-  --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/owner/sentiment-demo"
+ds_json \
+  --request PATCH \
+  --data '{"slug":"sentiment-v2"}' \
+  "$API/datasets/$DATASET" \
+  | jq
+
+export DATASET=owner/sentiment-v2
 ```
 
-## Errors
+Deletion permanently removes the dataset and its stored source and derived objects:
 
-API errors use a consistent problem document:
+```bash
+ds \
+  --request DELETE \
+  "$API/datasets/$DATASET"
+```
+
+## Optional: sign in from the command line
+
+Most people can generate a token in **Account settings** and skip this section.
+For a fully terminal-based workflow, sign in to a cookie jar, then create a token:
+
+```bash
+curl \
+  --fail-with-body \
+  --silent \
+  --show-error \
+  --cookie-jar data-studio.cookies \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "username": "owner",
+    "password": "your-password"
+  }' \
+  "$API/auth/login" \
+  | jq
+
+TOKEN=$(
+  curl \
+    --fail-with-body \
+    --silent \
+    --show-error \
+    --cookie data-studio.cookies \
+    --header 'Content-Type: application/json' \
+    --data '{
+      "name": "local-cli",
+      "scopes": ["read", "write"]
+    }' \
+    "$API/auth/tokens" \
+  | jq --raw-output '.token'
+)
+
+export TOKEN
+```
+
+The first registered account becomes the workspace administrator. To create it
+through the API, send the same payload to `$API/auth/register` instead of
+`$API/auth/login`.
+
+## Understand errors
+
+Errors use a consistent problem document:
 
 ```json
 {
-  "type": "about:blank",
   "title": "Access denied",
   "status": 403,
   "detail": "Only the dataset owner can change this dataset.",
@@ -270,6 +322,17 @@ API errors use a consistent problem document:
 }
 ```
 
-Use `--fail-with-body` in automation so `curl` returns a non-zero status while retaining the error
-body. Treat `401` as a missing or expired credential, `403` as insufficient scope or ownership,
-`409` as a resource conflict, and `422` as invalid input or dataset validation failure.
+Because the examples use `--fail-with-body`, `curl` exits unsuccessfully without
+hiding that useful response body.
+
+| Status | Meaning |
+| --- | --- |
+| `401` | The credential is missing, invalid, or expired. |
+| `403` | The token lacks the required scope or the user does not own the dataset. |
+| `404` | The requested resource does not exist or is not visible. |
+| `409` | A username, email, dataset, or upload conflicts with existing state. |
+| `422` | The request body or uploaded repository is invalid. |
+
+Interactive OpenAPI documentation is available at `http://localhost:8001/docs`
+for the default Compose API port, or at `http://localhost:8000/docs` when running
+the API development server directly.

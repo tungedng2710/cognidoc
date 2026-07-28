@@ -42,9 +42,10 @@ describe("App", () => {
 
   it("renders the API usage guide", async () => {
     render(<MemoryRouter initialEntries={["/docs/api"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Data Studio API guide" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Start using the API in minutes" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "3. Upload and publish" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "5. Pull a complete repository" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "5. Download a repository" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(5);
   });
 
   it("lets a signed-in user manage account settings while keeping username read-only", async () => {
