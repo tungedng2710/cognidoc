@@ -222,3 +222,76 @@ def test_delete_account_removes_owned_repositories_and_session(client: TestClien
         "/api/v1/auth/login",
         json={"username": "owner", "password": "secure-password"},
     ).status_code == 401
+
+
+def test_user_can_upload_and_replace_a_limited_avatar(client: TestClient) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={"username": "owner", "password": "secure-password"},
+    )
+    assert registered.status_code == 201
+    assert registered.json()["avatar_updated_at"] is None
+
+    png = b"\x89PNG\r\n\x1a\n" + b"avatar-content"
+    uploaded = client.put(
+        "/api/v1/auth/avatar",
+        files={"avatar": ("avatar.png", png, "image/png")},
+    )
+    assert uploaded.status_code == 200
+    assert uploaded.json()["avatar_updated_at"] is not None
+
+    downloaded = client.get("/api/v1/auth/users/owner/avatar")
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"] == "image/png"
+    assert downloaded.content == png
+
+    unsupported = client.put(
+        "/api/v1/auth/avatar",
+        files={"avatar": ("avatar.txt", b"not-an-image", "text/plain")},
+    )
+    assert unsupported.status_code == 415
+    assert unsupported.json()["code"] == "unsupported_avatar_type"
+
+    oversized = client.put(
+        "/api/v1/auth/avatar",
+        files={
+            "avatar": (
+                "large.png",
+                b"\x89PNG\r\n\x1a\n" + b"x" * (2 * 1024 * 1024),
+                "image/png",
+            )
+        },
+    )
+    assert oversized.status_code == 413
+    assert oversized.json()["code"] == "avatar_too_large"
+
+
+def test_dataset_list_can_be_filtered_by_repository_owner(client: TestClient) -> None:
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 201
+    assert client.post(
+        "/api/v1/datasets",
+        json={"namespace": "owner", "slug": "first", "visibility": "private"},
+    ).status_code == 201
+    client.post("/api/v1/auth/logout")
+
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "second", "password": "secure-password"},
+    ).status_code == 201
+    assert client.post(
+        "/api/v1/datasets",
+        json={"namespace": "second", "slug": "second", "visibility": "private"},
+    ).status_code == 201
+    client.post("/api/v1/auth/logout")
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 200
+
+    owner_items = client.get("/api/v1/datasets?owner=owner").json()["items"]
+    second_items = client.get("/api/v1/datasets?owner=second").json()["items"]
+    assert [item["slug"] for item in owner_items] == ["first"]
+    assert [item["slug"] for item in second_items] == ["second"]

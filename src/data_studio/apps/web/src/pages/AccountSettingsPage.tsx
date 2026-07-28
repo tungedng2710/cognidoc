@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Camera,
   Check,
   Copy,
   KeyRound,
@@ -10,7 +11,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
 import { api } from "../api";
@@ -18,6 +19,7 @@ import { AccountControls } from "../components/Auth";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { LoadingState } from "../components/Feedback";
+import { UserAvatar } from "../components/UserAvatar";
 import type { ApiToken, ApiTokenCreated } from "../types";
 
 function Message({ tone, children }: { tone: "success" | "error"; children: string }) {
@@ -29,8 +31,11 @@ function Message({ tone, children }: { tone: "success" | "error"; children: stri
 
 function ProfileSettings() {
   const { user, updateUser } = useAuth();
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -56,6 +61,24 @@ function ProfileSettings() {
     }
   };
 
+  const changeAvatar = async (file: File | undefined) => {
+    if (!file) return;
+    setAvatarError("");
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError("Avatar images must be 2 MB or smaller.");
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      updateUser(await api.uploadAvatar(file));
+    } catch (caught) {
+      setAvatarError(caught instanceof Error ? caught.message : "Could not update your avatar.");
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
   if (!user) return null;
   return (
     <section className="surface-panel p-5 lg:p-6">
@@ -66,6 +89,30 @@ function ProfileSettings() {
         <div>
           <h2 className="text-lg font-semibold text-slate-950">Profile</h2>
           <p className="mt-0.5 text-sm text-slate-500">Update how your account is identified.</p>
+        </div>
+      </div>
+      <div className="mt-5 flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <UserAvatar user={user} className="size-16 text-xl" />
+        <div>
+          <input
+            ref={avatarInputRef}
+            className="hidden"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            aria-label="Avatar image"
+            onChange={(event) => void changeAvatar(event.target.files?.[0])}
+          />
+          <button
+            className="button-secondary"
+            type="button"
+            disabled={uploadingAvatar}
+            onClick={() => avatarInputRef.current?.click()}
+          >
+            <Camera className="size-4" />
+            {uploadingAvatar ? "Uploading…" : "Change avatar"}
+          </button>
+          <p className="mt-1.5 text-xs text-slate-500">PNG, JPEG, or WebP. Maximum 2 MB.</p>
+          {avatarError ? <p className="mt-1.5 text-xs font-medium text-rose-600">{avatarError}</p> : null}
         </div>
       </div>
       <form className="mt-6" onSubmit={(event) => void submit(event)}>

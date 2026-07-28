@@ -23,6 +23,7 @@ from .models import (
     DatasetRevision,
     DatasetSplit,
     ProcessingJob,
+    User,
 )
 from .schemas import (
     ConfigRead,
@@ -120,9 +121,22 @@ def _revision_payload(revision: DatasetRevision, *, include_files: bool) -> dict
 
 
 @router.get("/datasets", response_model=DatasetList)
-def list_datasets(db: Database, datasets: Service, principal: OptionalPrincipal) -> dict[str, Any]:
+def list_datasets(
+    db: Database,
+    datasets: Service,
+    principal: OptionalPrincipal,
+    owner: Annotated[str | None, Query(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")] = None,
+) -> dict[str, Any]:
+    repositories = datasets.list_repositories()
+    if owner is not None:
+        owner_user = db.scalar(select(User).where(User.username == owner))
+        repositories = (
+            [item for item in repositories if item.owner_id == owner_user.id]
+            if owner_user is not None
+            else []
+        )
     visible = [
-        item for item in datasets.list_repositories() if can_read_repository(item, principal)
+        item for item in repositories if can_read_repository(item, principal)
     ]
     return {"items": [_repository_payload(db, item, principal) for item in visible]}
 

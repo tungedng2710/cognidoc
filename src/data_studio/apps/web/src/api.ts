@@ -86,6 +86,17 @@ export const api = {
     return request("/auth/password", { method: "PUT", body: JSON.stringify(body) });
   },
 
+  uploadAvatar(file: File): Promise<User> {
+    const form = new FormData();
+    form.append("avatar", file);
+    return request("/auth/avatar", { method: "PUT", body: form });
+  },
+
+  avatarUrl(username: string, version: string): string {
+    const params = new URLSearchParams({ v: version });
+    return `${API_ROOT}/auth/users/${encodeURIComponent(username)}/avatar?${params}`;
+  },
+
   listTokens(): Promise<ApiToken[]> {
     return request("/auth/tokens");
   },
@@ -105,8 +116,11 @@ export const api = {
     });
   },
 
-  async listDatasets(): Promise<Dataset[]> {
-    const response = await request<{ items: Dataset[] }>("/datasets");
+  async listDatasets(owner?: string): Promise<Dataset[]> {
+    const params = new URLSearchParams();
+    if (owner) params.set("owner", owner);
+    const suffix = params.size ? `?${params}` : "";
+    const response = await request<{ items: Dataset[] }>(`/datasets${suffix}`);
     return response.items;
   },
 

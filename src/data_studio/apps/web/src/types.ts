@@ -35,6 +35,7 @@ export interface User {
   display_name: string;
   email: string | null;
   is_admin: boolean;
+  avatar_updated_at: string | null;
   created_at: string;
 }
 

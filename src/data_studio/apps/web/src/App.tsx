@@ -5,6 +5,7 @@ import { ApiDocsPage } from "./pages/ApiDocsPage";
 import { AccountSettingsPage } from "./pages/AccountSettingsPage";
 import { DatasetsPage } from "./pages/DatasetsPage";
 import { DatasetWorkspace } from "./pages/DatasetWorkspace";
+import { UserRepositoriesPage } from "./pages/UserRepositoriesPage";
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
         <Route path="/" element={<DatasetsPage />} />
         <Route path="/docs/api" element={<ApiDocsPage />} />
         <Route path="/settings" element={<AccountSettingsPage />} />
+        <Route path="/users/:username/repositories" element={<UserRepositoriesPage />} />
         <Route path="/datasets/:namespace/:dataset/*" element={<DatasetWorkspace />} />
       </Routes>
     </AuthProvider>

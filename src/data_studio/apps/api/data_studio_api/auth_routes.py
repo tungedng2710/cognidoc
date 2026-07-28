@@ -1,6 +1,8 @@
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,7 +22,7 @@ from .auth import (
 from .config import Settings, get_settings
 from .database import get_db
 from .errors import ConflictError, NotFoundError, StudioError
-from .models import ApiToken, DatasetRepository, User
+from .models import ApiToken, DatasetRepository, User, utcnow
 from .schemas import (
     AccountDelete,
     ApiTokenCreate,
@@ -39,6 +41,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 Database = Annotated[Session, Depends(get_db)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
 
 
 def _set_session_cookie(response: Response, user: User, settings: Settings) -> None:
@@ -71,6 +74,21 @@ def _require_current_password(user: User, password: str) -> None:
             "Incorrect password",
             "The current password is incorrect.",
         )
+
+
+def _avatar_file_type(content: bytes) -> tuple[str, str]:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", "png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", "jpg"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    raise StudioError(
+        415,
+        "unsupported_avatar_type",
+        "Unsupported image",
+        "Use a PNG, JPEG, or WebP image.",
+    )
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
@@ -156,6 +174,55 @@ def update_profile(
         raise ConflictError("That email is already registered.") from exc
     db.refresh(user)
     return user
+
+
+@router.put("/avatar", response_model=UserRead)
+async def update_avatar(
+    request: Request,
+    principal: CurrentPrincipal,
+    db: Database,
+    avatar: Annotated[UploadFile, File(description="PNG, JPEG, or WebP avatar")],
+) -> User:
+    _require_session(principal)
+    user = db.get(User, principal.user_id)
+    if user is None:
+        raise NotFoundError("User")
+    content = await avatar.read(AVATAR_MAX_BYTES + 1)
+    if not content:
+        raise StudioError(422, "empty_avatar", "Empty image", "Choose a non-empty image file.")
+    if len(content) > AVATAR_MAX_BYTES:
+        raise StudioError(
+            413,
+            "avatar_too_large",
+            "Image too large",
+            "Avatar images must be 2 MB or smaller.",
+        )
+    media_type, suffix = _avatar_file_type(content)
+    object_key = f"users/avatars/{user.id}/{uuid.uuid4().hex}.{suffix}"
+    storage: ObjectStorage = request.app.state.storage
+    storage.put_bytes(object_key, content, media_type)
+    previous_key = user.avatar_object_key
+    user.avatar_object_key = object_key
+    user.avatar_media_type = media_type
+    user.avatar_updated_at = utcnow()
+    db.commit()
+    db.refresh(user)
+    if previous_key and previous_key != object_key:
+        storage.delete_objects([previous_key])
+    return user
+
+
+@router.get("/users/{username}/avatar")
+def read_avatar(username: str, request: Request, db: Database) -> StreamingResponse:
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None or user.avatar_object_key is None or user.avatar_media_type is None:
+        raise NotFoundError("User avatar")
+    storage: ObjectStorage = request.app.state.storage
+    return StreamingResponse(
+        storage.iter_object(user.avatar_object_key),
+        media_type=user.avatar_media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.put("/password", response_model=UserRead)
@@ -271,6 +338,8 @@ def delete_account(
     for namespace, slug in repositories:
         datasets.delete_repository(namespace, slug)
 
+    if user.avatar_object_key:
+        storage.delete_objects([user.avatar_object_key])
     db.execute(delete(ApiToken).where(ApiToken.user_id == user.id))
     db.delete(user)
     db.commit()

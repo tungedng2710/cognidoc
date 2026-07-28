@@ -1,15 +1,25 @@
-import { LogIn, LogOut, ShieldCheck, UserPlus, UserRound, X } from "lucide-react";
+import {
+  ChevronDown,
+  Database,
+  LogIn,
+  LogOut,
+  Settings,
+  UserPlus,
+  X,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../api";
 import type { User } from "../types";
 import { AuthContext, type AuthMode, useAuth } from "./auth-context";
+import { UserAvatar } from "./UserAvatar";
 
 function AuthDialog({
   initialMode,
@@ -184,6 +194,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function AccountControls() {
   const { user, loading, openAuth, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+
   if (loading) return <span className="h-8 w-24 animate-pulse rounded-lg bg-slate-100" />;
   if (!user) {
     return (
@@ -193,27 +216,61 @@ export function AccountControls() {
     );
   }
   return (
-    <div className="flex items-center gap-2">
-      <Link
-        className="header-account hidden sm:flex"
-        to="/settings"
-        aria-label="Account settings"
+    <div className="relative" ref={rootRef}>
+      <button
+        className="flex items-center gap-1 rounded-full p-0.5 text-slate-500 outline-none transition hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Open user menu"
+        onClick={() => setOpen((current) => !current)}
       >
-        <span className="grid size-5 place-items-center rounded-md bg-indigo-100 text-indigo-600">
-          {user.is_admin ? <ShieldCheck className="size-3.5" /> : <UserRound className="size-3.5" />}
-        </span>
-        {user.display_name || user.username}
-      </Link>
-      <Link
-        className="header-icon sm:hidden"
-        to="/settings"
-        aria-label="Account settings"
-      >
-        <UserRound className="size-4" />
-      </Link>
-      <button className="header-icon" type="button" onClick={() => void signOut()} aria-label="Sign out">
-        <LogOut className="size-4" />
+        <UserAvatar user={user} className="size-8" />
+        <ChevronDown className="mr-1 size-3.5" />
       </button>
+      {open ? (
+        <div
+          className="absolute top-full right-0 z-50 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-950/10"
+          role="menu"
+        >
+          <div className="flex items-center gap-3 border-b border-slate-100 px-3 py-3">
+            <UserAvatar user={user} className="size-10" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {user.display_name || user.username}
+              </p>
+              <p className="truncate text-xs text-slate-500">@{user.username}</p>
+            </div>
+          </div>
+          <Link
+            className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+            to={`/users/${encodeURIComponent(user.username)}/repositories`}
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            <Database className="size-4" /> User&apos;s repositories
+          </Link>
+          <Link
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+            to="/settings"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            <Settings className="size-4" /> User settings
+          </Link>
+          <button
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              void signOut().then(() => navigate("/"));
+            }}
+          >
+            <LogOut className="size-4" /> Log out
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

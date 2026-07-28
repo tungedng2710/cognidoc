@@ -61,6 +61,7 @@ describe("App", () => {
       display_name: "Owner",
       email: "owner@example.com",
       is_admin: false,
+      avatar_updated_at: null,
       created_at: "2026-07-22T08:00:00Z",
     };
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -78,6 +79,16 @@ describe("App", () => {
       }
       if (url.endsWith("/auth/password") && init?.method === "PUT") {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      if (url.endsWith("/auth/avatar") && init?.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            ...user,
+            avatar_updated_at: "2026-07-28T10:00:00Z",
+          }),
+        });
       }
       if (url.endsWith("/auth/tokens") && init?.method === "POST") {
         return Promise.resolve({
@@ -109,6 +120,28 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Account settings" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /Username/ })).toHaveAttribute("readonly");
+    fireEvent.click(screen.getByRole("button", { name: "Open user menu" }));
+    expect(screen.getByRole("menuitem", { name: "User's repositories" })).toHaveAttribute(
+      "href",
+      "/users/owner/repositories",
+    );
+    expect(screen.getByRole("menuitem", { name: "User settings" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open user menu" }));
+
+    const avatar = new File([new Uint8Array([137, 80, 78, 71])], "avatar.png", {
+      type: "image/png",
+    });
+    fireEvent.change(screen.getByLabelText("Avatar image"), { target: { files: [avatar] } });
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/auth/avatar",
+        expect.objectContaining({ method: "PUT" }),
+      );
+    });
 
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
       target: { value: "Updated Owner" },
@@ -157,6 +190,60 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Generate token" }));
     expect(await screen.findByDisplayValue("ds_pat_example_secret")).toHaveAttribute("readonly");
+  });
+
+  it("shows repositories created by the selected user", async () => {
+    const user = {
+      id: "owner-id",
+      username: "owner",
+      display_name: "Owner",
+      email: null,
+      is_admin: false,
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      if (url.endsWith("/datasets?owner=owner")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            items: [{
+              id: "dataset-id",
+              namespace: "owner",
+              slug: "my-data",
+              visibility: "private",
+              description: "Owned repository",
+              default_branch: "main",
+              created_at: "2026-07-22T08:00:00Z",
+              updated_at: "2026-07-22T08:00:00Z",
+              owner: "owner",
+              can_edit: true,
+              latest_revision: null,
+            }],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/users/owner/repositories"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Owner's repositories" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "my-data" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasets?owner=owner",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 
   it("highlights the active workspace tab", async () => {

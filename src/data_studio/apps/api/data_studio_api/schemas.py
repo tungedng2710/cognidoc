@@ -134,6 +134,7 @@ class UserRead(OrmModel):
     display_name: str
     email: str | None
     is_admin: bool
+    avatar_updated_at: datetime | None
     created_at: datetime
 
 

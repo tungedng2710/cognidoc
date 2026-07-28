@@ -57,6 +57,11 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(512))
     is_admin: Mapped[bool] = mapped_column(default=False)
+    avatar_object_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    avatar_media_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     repositories: Mapped[list["DatasetRepository"]] = relationship(back_populates="owner")

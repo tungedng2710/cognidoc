@@ -156,10 +156,10 @@ export function DatasetsPage() {
           <Brand />
           <div className="flex items-center gap-2">
             <ApiGuideLink />
-            <AccountControls />
             <button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}>
               <Plus className="size-4" /> <span className="hidden sm:inline">New dataset</span><span className="sm:hidden">New</span>
             </button>
+            <AccountControls />
           </div>
         </div>
       </header>
