@@ -155,6 +155,7 @@ describe("App", () => {
 
   it("highlights the active workspace tab", async () => {
     const createdAt = "2026-07-22T08:00:00Z";
+    const longDescription = "A detailed dataset description ".repeat(20).trim();
     const summary = {
       revision_id: "abc123",
       branch: "main",
@@ -196,7 +197,7 @@ describe("App", () => {
             namespace: "research",
             slug: "demo",
             visibility: "private",
-            description: "Demo dataset",
+            description: longDescription,
             default_branch: "main",
             created_at: createdAt,
             updated_at: createdAt,
@@ -218,6 +219,8 @@ describe("App", () => {
     expect(await screen.findByText("Repository files")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByTitle(longDescription)).toHaveClass("min-w-0", "truncate");
+    expect(screen.getByRole("link", { name: "Download dataset" })).toHaveClass("shrink-0");
     expect(screen.getByRole("link", { name: "Download dataset" })).toHaveAttribute(
       "href",
       "/api/v1/datasets/research/demo/archive/abc123",

@@ -751,7 +751,10 @@ export function DatasetWorkspace() {
         <div className="page-shell flex items-center justify-between py-2">
           <Brand />
           <div className="flex items-center gap-2">
-            <Link className="header-action border-transparent shadow-none" to="/"><ChevronLeft className="size-4" /> All datasets</Link>
+            <Link className="header-action border-transparent shadow-none" to="/">
+              <ChevronLeft className="size-4" />
+              <span className="hidden md:inline">All datasets</span>
+            </Link>
             <ApiGuideLink />
             <AccountControls />
           </div>
@@ -760,7 +763,7 @@ export function DatasetWorkspace() {
       <main>
         <section className="border-b border-slate-200 bg-white/90 shadow-sm shadow-slate-900/3">
           <div className="page-shell pt-3">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
                   <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-md shadow-indigo-950/15"><Database className="size-4.5" /></span>
@@ -769,10 +772,15 @@ export function DatasetWorkspace() {
                     <h1 className="truncate text-2xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 pl-12 text-xs text-slate-500">
-                  <p className="max-w-xl truncate">{repository.description || "No description yet."}</p>
+                <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 pl-12 text-xs text-slate-500">
+                  <p
+                    className="min-w-0 max-w-xl flex-1 truncate"
+                    title={repository.description || "No description yet."}
+                  >
+                    {repository.description || "No description yet."}
+                  </p>
                   {revision ? (
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1">
                       <span><strong className="font-semibold text-slate-800">{revision.configs.length.toLocaleString()}</strong> subsets</span>
                       <span><strong className="font-semibold text-slate-800">{splitCount.toLocaleString()}</strong> splits</span>
                       <span><strong className="font-semibold text-slate-800">{totalRows.toLocaleString()}</strong> rows</span>
@@ -781,10 +789,10 @@ export function DatasetWorkspace() {
                   ) : null}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 xl:shrink-0 xl:justify-end">
                 {revision ? (
                   <a
-                    className="button-secondary"
+                    className="button-secondary shrink-0"
                     href={api.archiveUrl(namespace, dataset, revision.revision_id)}
                   >
                     <Download className="size-4" /> Download dataset
@@ -793,7 +801,7 @@ export function DatasetWorkspace() {
                 {revisions.length ? (
                   <StudioSelect
                     ariaLabel="Dataset revision"
-                    className="min-w-56"
+                    className="w-52 max-w-full shrink-0"
                     label="Revision"
                     leadingIcon={<GitCommitHorizontal className="size-4" />}
                     value={selectedRevision ?? revisions[0]?.revision_id ?? ""}
@@ -805,7 +813,7 @@ export function DatasetWorkspace() {
                     onChange={changeRevision}
                   />
                 ) : null}
-                {repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
+                {repository.can_edit ? <button className="button-primary shrink-0" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
               </div>
             </div>
             <nav className="mt-2 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
