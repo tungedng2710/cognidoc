@@ -45,6 +45,16 @@ ds_json() {
 Keep tokens out of source control and shell scripts that will be shared. Use a
 `read`-only token when a client never creates, uploads, updates, or deletes datasets.
 
+## Repository compatibility
+
+The upload API accepts Hugging Face-compatible dataset repository layouts. This
+includes Dataset Cards with YAML front matter, declarative configs, conventional
+train/validation/test splits, sharded data files, metadata files, and ImageFolder
+structures.
+
+Uploaded source paths and bytes are preserved. The Studio provides its own REST
+API and does not implement the complete `huggingface_hub` protocol.
+
 ## Create a dataset
 
 The namespace is usually your username. Visibility can be `private`, `internal`,

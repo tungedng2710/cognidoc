@@ -268,6 +268,14 @@ unzip -l sentiment-demo.zip`}</CodeBlock>
                 <li>Keep tokens out of shell history, source code, screenshots, and Git.</li>
                 <li>API errors include a readable <InlineCode>detail</InlineCode> and stable <InlineCode>code</InlineCode>.</li>
               </ul>
+              <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                <p className="text-sm font-semibold text-indigo-950">Repository compatibility</p>
+                <p className="mt-1.5 text-sm leading-6 text-indigo-900/75">
+                  Uploads accept Hugging Face-compatible dataset repository layouts, including
+                  Dataset Cards, configs, conventional splits, shards, metadata files, and
+                  ImageFolder structures. Source paths and bytes are preserved.
+                </p>
+              </div>
               <p className="mt-5 text-sm leading-6 text-slate-500">
                 For filtering, individual file downloads, updates, deletion, and cookie-based
                 login, see <InlineCode>docs/API_USAGE.md</InlineCode> in the repository.

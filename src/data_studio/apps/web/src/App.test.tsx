@@ -34,7 +34,7 @@ describe("App", () => {
   it("renders the empty dataset hub state", async () => {
     render(<MemoryRouter><App /></MemoryRouter>);
     expect(screen.getByRole("link", { name: "TonAI Data Studio home" })).toBeInTheDocument();
-    expect(await screen.findByText("Your datasets, legible and versioned.")).toBeInTheDocument();
+    expect(await screen.findByText("Datasets, clearly versioned.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Repositories" })).toBeInTheDocument();
     expect(await screen.findByText("Create your first dataset")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");

@@ -170,13 +170,13 @@ export function DatasetsPage() {
           <div className="relative grid gap-5 lg:grid-cols-[1.45fr_0.55fr] lg:items-center">
             <div>
               <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-indigo-600 uppercase">
-                Hugging Face-compatible data workspace
+                Dataset workspace
               </p>
               <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-slate-950">
-                Your datasets, legible and versioned.
+                Datasets, clearly versioned.
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Upload compatible repositories without conversion, then browse cards, shards, schemas, and rows from one focused workspace.
+                Upload, inspect, and share data from one focused workspace.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -216,7 +216,7 @@ export function DatasetsPage() {
             {!error && datasets !== null && !filtered?.length ? (
               <EmptyState
                 title={query ? "No matching datasets" : "Create your first dataset"}
-                description={query ? "Try a different name or description." : user ? "Start with a repository, then upload any Hugging Face-compatible folder." : "Sign in to create a dataset, or browse public repositories here."}
+                description={query ? "Try a different name or description." : user ? "Create a repository, then upload a dataset folder." : "Sign in to create a dataset, or browse public repositories here."}
                 action={!query ? <button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}><Plus className="size-4" /> {user ? "New dataset" : "Create account"}</button> : undefined}
               />
             ) : null}

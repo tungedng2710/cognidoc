@@ -11,7 +11,6 @@ import {
   Files,
   Filter,
   GitCommitHorizontal,
-  Globe2,
   Search,
   Save,
   Settings,
@@ -552,7 +551,7 @@ function SettingsTab({
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="space-y-5">
       <section className="surface-panel p-5">
         <div className="flex items-center gap-3"><Shield className="size-5 text-indigo-600" /><h2 className="font-semibold">Repository access</h2></div>
         {dataset.can_edit ? (
@@ -614,13 +613,8 @@ function SettingsTab({
           </div>
         )}
       </section>
-      <section className="surface-panel p-5">
-        <div className="flex items-center gap-3"><Globe2 className="size-5 text-indigo-600" /><h2 className="font-semibold">Compatibility contract</h2></div>
-        <p className="mt-4 text-sm leading-6 text-slate-600">Folder uploads preserve relative paths and understand Dataset Card YAML, declarative configs, conventional splits, sharded filenames, and ImageFolder layouts.</p>
-        <p className="mt-3 text-xs leading-5 text-slate-500">Full huggingface_hub protocol compatibility is intentionally not claimed by this release.</p>
-      </section>
       {dataset.can_edit ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 lg:col-span-2">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5">
           <div className="flex items-center gap-3 text-rose-800"><Trash2 className="size-5" /><h2 className="font-semibold">Delete dataset</h2></div>
           <p className="mt-3 text-sm leading-6 text-rose-800/80">This permanently removes repository metadata, revisions, previews, and file records. Type <strong>{dataset.slug}</strong> to confirm.</p>
           {!deleting ? (
@@ -812,7 +806,7 @@ export function DatasetWorkspace() {
           ) : selectedRevision && !revision ? (
             <LoadingState label="Loading immutable revision…" />
           ) : !revision ? (
-            <EmptyState title="No published revision" description={repository.can_edit ? "Upload a Hugging Face-compatible folder to create the first immutable revision." : "The owner has not published a revision yet."} action={repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload folder</button> : undefined} />
+            <EmptyState title="No published revision" description={repository.can_edit ? "Upload a dataset folder to create the first immutable revision." : "The owner has not published a revision yet."} action={repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload folder</button> : undefined} />
           ) : (
             <Routes>
               <Route index element={<CardTab revision={revision} openUpload={() => setUploadOpen(true)} canEdit={repository.can_edit} />} />
