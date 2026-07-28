@@ -112,6 +112,10 @@ describe("App", () => {
     expect(await screen.findByText("Repository files")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Download dataset" })).toHaveAttribute(
+      "href",
+      "/api/v1/datasets/research/demo/archive/abc123",
+    );
   });
 
   it("lets an owner rename and delete a dataset before its first revision", async () => {

@@ -2,7 +2,7 @@ import hashlib
 import json
 import mimetypes
 import shutil
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
 from .config import Settings
+from .domain.archive import iter_repository_zip
 from .domain.card import DatasetCard, parse_dataset_card
 from .domain.layout import DetectedConfig, detect_layout, is_previewable
 from .domain.manifest import ManifestFile, build_manifest
@@ -247,6 +248,26 @@ class DatasetService:
         if repository_file is None:
             raise NotFoundError(f"File {normalized}")
         return repository_file
+
+    def revision_archive(
+        self,
+        namespace: str,
+        slug: str,
+        revision: str,
+    ) -> tuple[str, int, Iterator[bytes]]:
+        resolved = resolve_revision(
+            self.db,
+            get_repository(self.db, namespace, slug),
+            revision,
+            include_files=False,
+        )
+        files = self.db.scalars(
+            select(RepositoryFile)
+            .where(RepositoryFile.revision_id == resolved.id)
+            .order_by(RepositoryFile.path)
+        ).all()
+        filename = f"{namespace}-{slug}-{resolved.revision_id}.zip"
+        return filename, len(files), iter_repository_zip(files, self.storage)
 
     def create_upload(self, namespace: str, slug: str, commit_message: str) -> UploadSession:
         repository = get_repository(self.db, namespace, slug)

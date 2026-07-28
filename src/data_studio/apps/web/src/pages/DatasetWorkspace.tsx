@@ -782,6 +782,14 @@ export function DatasetWorkspace() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
+                {revision ? (
+                  <a
+                    className="button-secondary"
+                    href={api.archiveUrl(namespace, dataset, revision.revision_id)}
+                  >
+                    <Download className="size-4" /> Download dataset
+                  </a>
+                ) : null}
                 {revisions.length ? (
                   <StudioSelect
                     ariaLabel="Dataset revision"

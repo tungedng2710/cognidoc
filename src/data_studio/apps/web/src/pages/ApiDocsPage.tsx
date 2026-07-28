@@ -94,27 +94,15 @@ export function ApiDocsPage() {
             <section className="surface-panel p-6 lg:p-8" id="download">
               <div className="flex items-center gap-3"><Download className="size-5 text-indigo-600" /><h2 className="text-xl font-semibold">5. Pull a complete repository</h2></div>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Read the immutable file tree, then stream every source file while preserving its repository path. Pin <code className="rounded bg-slate-100 px-1.5 py-0.5">REVISION</code> to an ID for a reproducible snapshot; use <code className="rounded bg-slate-100 px-1.5 py-0.5">main</code> for the latest revision. Remove both authorization headers when the dataset is public.
+                Download every source file as one ZIP while preserving the repository layout, including the Dataset Card, metadata, data shards, and media. Pin <code className="rounded bg-slate-100 px-1.5 py-0.5">REVISION</code> to an ID for a reproducible snapshot; use <code className="rounded bg-slate-100 px-1.5 py-0.5">main</code> for the latest revision. Remove the authorization header when the dataset is public.
               </p>
               <CodeBlock>{`export REPOSITORY=owner/sentiment-demo
 export REVISION=main
-export DEST=sentiment-demo
 
-mkdir -p "$DEST"
-
-curl --fail --silent --show-error \
+curl --fail-with-body --location \
   -H "Authorization: Bearer $TOKEN" \
-  "$API/datasets/$REPOSITORY/tree/$REVISION" |
-jq -r '.[].path' |
-while IFS= read -r path; do
-  encoded_path=$(jq -nr --arg path "$path" '$path | @uri')
-  mkdir -p "$DEST/$(dirname "$path")"
-  echo "Downloading $path"
-  curl --fail --silent --show-error --location --retry 3 \
-    -H "Authorization: Bearer $TOKEN" \
-    --output "$DEST/$path" \
-    "$API/datasets/$REPOSITORY/blob/$REVISION/$encoded_path"
-done`}</CodeBlock>
+  --output sentiment-demo.zip \
+  "$API/datasets/$REPOSITORY/archive/$REVISION"`}</CodeBlock>
               <p className="mt-5 text-sm leading-6 text-slate-500">
                 This Studio preserves Hugging Face-compatible repository layouts but does not implement the Hugging Face Hub download protocol, so use this REST workflow instead of <code className="rounded bg-slate-100 px-1.5 py-0.5">hf download</code>.
               </p>

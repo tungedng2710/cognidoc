@@ -173,6 +173,7 @@ POST /uploads/{upload_id}/complete
 GET  /datasets/{namespace}/{dataset}/revisions
 GET  /datasets/{namespace}/{dataset}/tree/{revision}
 GET  /datasets/{namespace}/{dataset}/blob/{revision}/{path}
+GET  /datasets/{namespace}/{dataset}/archive/{revision}
 GET  /datasets/{namespace}/{dataset}/viewer/{config}/{split}
 GET  /datasets/{namespace}/{dataset}/statistics/{config}/{split}
 ```

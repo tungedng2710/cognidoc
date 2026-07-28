@@ -322,6 +322,27 @@ def download_blob(
     )
 
 
+@router.get("/datasets/{namespace}/{dataset}/archive/{revision}")
+def download_archive(
+    namespace: str,
+    dataset: str,
+    revision: str,
+    db: Database,
+    datasets: Service,
+    principal: OptionalPrincipal,
+) -> StreamingResponse:
+    _repository_for_read(db, namespace, dataset, principal)
+    filename, file_count, archive = datasets.revision_archive(namespace, dataset, revision)
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Archive-File-Count": str(file_count),
+        },
+    )
+
+
 @router.get("/datasets/{namespace}/{dataset}/configs", response_model=list[ConfigRead])
 def list_configs(
     namespace: str,

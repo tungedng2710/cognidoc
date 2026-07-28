@@ -261,4 +261,8 @@ export const api = {
     const suffix = inline ? "?inline=true" : "";
     return `${API_ROOT}/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/blob/${encodeURIComponent(revision)}/${encodedPath}${suffix}`;
   },
+
+  archiveUrl(namespace: string, dataset: string, revision: string): string {
+    return `${API_ROOT}/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/archive/${encodeURIComponent(revision)}`;
+  },
 };

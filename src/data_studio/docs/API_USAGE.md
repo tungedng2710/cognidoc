@@ -213,33 +213,21 @@ Source downloads are streamed and retain the uploaded bytes.
 
 ### Pull a complete repository
 
-The tree endpoint returns every path in a revision. The following Bash workflow downloads each
-source object and recreates the original repository layout locally. Set `REVISION_ID` to an
-immutable revision ID for a reproducible snapshot, or use `main` to pull the latest revision.
+Download the complete immutable source tree as a ZIP archive. The archive contains every uploaded
+file, including `README.md`, `metadata.*`, data shards, and referenced media, at its original
+repository path. Set `REVISION_ID` to an immutable revision ID for a reproducible snapshot, or use
+`main` to pull the latest revision.
 
 ```bash
 export DATASET_PATH=owner/sentiment-demo
 export REVISION_ID=main
-export DESTINATION=sentiment-demo
-
-mkdir -p "$DESTINATION"
-
-curl --fail --silent --show-error \
+curl --fail-with-body --location \
   --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-  "$DATA_STUDIO_API/datasets/$DATASET_PATH/tree/$REVISION_ID" \
-  | jq -r '.[].path' \
-  | while IFS= read -r path; do
-      encoded_path="$(jq -nr --arg path "$path" '$path | @uri')"
-      mkdir -p "$DESTINATION/$(dirname "$path")"
-      echo "Downloading $path"
-      curl --fail --silent --show-error --location --retry 3 \
-        --header "Authorization: Bearer $DATA_STUDIO_TOKEN" \
-        --output "$DESTINATION/$path" \
-        "$DATA_STUDIO_API/datasets/$DATASET_PATH/blob/$REVISION_ID/$encoded_path"
-    done
+  --output sentiment-demo.zip \
+  "$DATA_STUDIO_API/datasets/$DATASET_PATH/archive/$REVISION_ID"
 ```
 
-Public datasets do not require credentials; remove both `Authorization` headers when pulling one.
+Public datasets do not require credentials; remove the `Authorization` header when pulling one.
 Private datasets require an owner or administrator token, while internal datasets require a token
 from any signed-in user. The Studio accepts Hugging Face-compatible layouts but is not a drop-in
 implementation of the Hub download protocol, so `hf download` cannot pull these repositories.

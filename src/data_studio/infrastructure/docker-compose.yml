@@ -29,7 +29,7 @@ services:
   rustfs-permissions:
     image: alpine:3.22
     user: root
-    command: ["chown", "-R", "10001:10001", "/rustfs"]
+    command: ["chown", "10001:10001", "/rustfs"]
     volumes:
       - "${RUSTFS_DATA_PATH:-rustfs_data}:/rustfs"
 
@@ -93,6 +93,8 @@ services:
       DATA_STUDIO_STAGING_ROOT: /var/lib/data-studio/uploads
       DATA_STUDIO_VERSIONING_ROOT: /var/lib/data-studio/versioning
       TMPDIR: /var/lib/data-studio/uploads
+      USER: data-studio
+      LOGNAME: data-studio
       DATA_STUDIO_MAX_UPLOAD_BYTES: ${DATA_STUDIO_MAX_UPLOAD_BYTES:-2147483648}
       DATA_STUDIO_MAX_FILE_BYTES: ${DATA_STUDIO_MAX_FILE_BYTES:-536870912}
       DATA_STUDIO_MAX_FILE_COUNT: ${DATA_STUDIO_MAX_FILE_COUNT:-10000}
@@ -139,6 +141,8 @@ services:
       DATA_STUDIO_STAGING_ROOT: /var/lib/data-studio/uploads
       DATA_STUDIO_VERSIONING_ROOT: /var/lib/data-studio/versioning
       TMPDIR: /var/lib/data-studio/uploads
+      USER: data-studio
+      LOGNAME: data-studio
       DATA_STUDIO_MAX_UPLOAD_BYTES: ${DATA_STUDIO_MAX_UPLOAD_BYTES:-2147483648}
       DATA_STUDIO_MAX_FILE_BYTES: ${DATA_STUDIO_MAX_FILE_BYTES:-536870912}
       DATA_STUDIO_MAX_FILE_COUNT: ${DATA_STUDIO_MAX_FILE_COUNT:-10000}
