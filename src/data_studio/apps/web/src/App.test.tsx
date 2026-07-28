@@ -225,6 +225,10 @@ describe("App", () => {
       "href",
       "/api/v1/datasets/research/demo/archive/abc123",
     );
+    fireEvent.click(screen.getByRole("link", { name: "Dataset card" }));
+    expect(await screen.findByText("This dataset has no card yet")).toBeInTheDocument();
+    expect(screen.queryByText("Dataset metadata")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ready to browse")).not.toBeInTheDocument();
   });
 
   it("lets an owner rename and delete a dataset before its first revision", async () => {

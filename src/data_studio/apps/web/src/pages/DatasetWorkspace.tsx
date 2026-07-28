@@ -2,7 +2,6 @@ import {
   BarChart3,
   BookOpenText,
   Braces,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Database,
@@ -113,45 +112,17 @@ function CardTab({
   canEdit: boolean;
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs lg:p-7">
-        {revision.card_html ? (
-          <div className="card-markdown" dangerouslySetInnerHTML={{ __html: revision.card_html }} />
-        ) : (
-          <EmptyState
-            title="This dataset has no card yet"
-            description="Add a README.md to the repository root and publish another revision. YAML front matter is supported."
-            action={canEdit ? <button className="button-primary" type="button" onClick={openUpload}><UploadCloud className="size-4" /> Upload revision</button> : undefined}
-          />
-        )}
-      </article>
-      <aside className="space-y-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="eyebrow">Dataset metadata</p>
-          <dl className="mt-4 space-y-3 text-sm">
-            {Object.entries(revision.card_metadata).slice(0, 12).map(([key, value]) => (
-              <div className="flex items-start justify-between gap-4" key={key}>
-                <dt className="text-slate-500">{key}</dt>
-                <dd className="max-w-36 text-right font-medium break-words text-slate-900">
-                  {typeof value === "string" ? value : JSON.stringify(value)}
-                </dd>
-              </div>
-            ))}
-            {!Object.keys(revision.card_metadata).length ? (
-              <p className="text-slate-500">No YAML front matter.</p>
-            ) : null}
-          </dl>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="eyebrow">Revision</p>
-          <p className="mt-3 font-mono text-sm font-semibold text-indigo-700">{revision.revision_id}</p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{revision.commit_message}</p>
-          <div className="mt-4 flex items-center gap-2 text-xs font-medium text-emerald-700">
-            <CheckCircle2 className="size-4" /> Ready to browse
-          </div>
-        </div>
-      </aside>
-    </div>
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs lg:p-7">
+      {revision.card_html ? (
+        <div className="card-markdown" dangerouslySetInnerHTML={{ __html: revision.card_html }} />
+      ) : (
+        <EmptyState
+          title="This dataset has no card yet"
+          description="Add a README.md to the repository root and publish another revision. YAML front matter is supported."
+          action={canEdit ? <button className="button-primary" type="button" onClick={openUpload}><UploadCloud className="size-4" /> Upload revision</button> : undefined}
+        />
+      )}
+    </article>
   );
 }
 
