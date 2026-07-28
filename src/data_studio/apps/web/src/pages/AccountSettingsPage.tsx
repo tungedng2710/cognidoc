@@ -58,7 +58,7 @@ function ProfileSettings() {
 
   if (!user) return null;
   return (
-    <section className="surface-panel p-6 lg:p-8">
+    <section className="surface-panel p-5 lg:p-6">
       <div className="flex items-center gap-3">
         <span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
           <UserRound className="size-5" />
@@ -150,7 +150,7 @@ function PasswordSettings() {
   };
 
   return (
-    <section className="surface-panel p-6 lg:p-8">
+    <section className="surface-panel p-5 lg:p-6">
       <div className="flex items-center gap-3">
         <span className="grid size-10 place-items-center rounded-xl bg-cyan-50 text-cyan-700">
           <LockKeyhole className="size-5" />
@@ -267,7 +267,7 @@ function TokenSettings() {
   };
 
   return (
-    <section className="surface-panel p-6 lg:p-8">
+    <section className="surface-panel p-5 lg:p-6">
       <div className="flex items-center gap-3">
         <span className="grid size-10 place-items-center rounded-xl bg-violet-50 text-violet-600">
           <KeyRound className="size-5" />
@@ -360,7 +360,7 @@ function DeleteAccountSettings() {
 
   if (!user) return null;
   return (
-    <section className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm shadow-rose-950/5 lg:p-8">
+    <section className="rounded-2xl border border-rose-200 bg-white p-5 shadow-xs shadow-rose-950/5 lg:p-6">
       <div className="flex items-center gap-3">
         <span className="grid size-10 place-items-center rounded-xl bg-rose-50 text-rose-600">
           <ShieldAlert className="size-5" />
@@ -415,11 +415,11 @@ export function AccountSettingsPage() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-30">
-        <div className="page-shell flex items-center justify-between py-2.5">
+        <div className="page-shell flex items-center justify-between py-2">
           <Brand />
           <div className="flex items-center gap-2">
             <Link
-              className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+              className="header-action"
               to="/"
             >
               <ArrowLeft className="size-4" /> <span className="hidden sm:inline">All datasets</span>
@@ -428,13 +428,13 @@ export function AccountSettingsPage() {
           </div>
         </div>
       </header>
-      <main className="page-shell py-7 lg:py-9">
-        <div className="mb-7">
+      <main className="page-shell py-5 lg:py-6">
+        <div className="mb-5">
           <p className="eyebrow">Personal settings</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">Account settings</h1>
           <p className="mt-2 text-sm text-slate-500">Manage your profile, password, and API access.</p>
         </div>
-        <div className="grid items-start gap-6 xl:grid-cols-2">
+        <div className="grid items-start gap-4 xl:grid-cols-2">
           <ProfileSettings />
           <PasswordSettings />
           <div className="xl:col-span-2"><TokenSettings /></div>

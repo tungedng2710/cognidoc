@@ -184,10 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function AccountControls() {
   const { user, loading, openAuth, signOut } = useAuth();
-  if (loading) return <span className="h-9 w-24 animate-pulse rounded-xl bg-white/10" />;
+  if (loading) return <span className="h-8 w-24 animate-pulse rounded-lg bg-slate-100" />;
   if (!user) {
     return (
-      <button className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white" type="button" onClick={() => openAuth("login")}>
+      <button className="header-action" type="button" onClick={() => openAuth("login")}>
         <LogIn className="size-4" /> Sign in
       </button>
     );
@@ -195,23 +195,23 @@ export function AccountControls() {
   return (
     <div className="flex items-center gap-2">
       <Link
-        className="hidden items-center gap-2 rounded-xl bg-white/8 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/12 hover:text-white sm:flex"
+        className="header-account hidden sm:flex"
         to="/settings"
         aria-label="Account settings"
       >
-        <span className="grid size-6 place-items-center rounded-lg bg-indigo-500/25 text-indigo-200">
+        <span className="grid size-5 place-items-center rounded-md bg-indigo-100 text-indigo-600">
           {user.is_admin ? <ShieldCheck className="size-3.5" /> : <UserRound className="size-3.5" />}
         </span>
         {user.display_name || user.username}
       </Link>
       <Link
-        className="grid size-9 place-items-center rounded-xl border border-white/15 text-slate-300 transition hover:bg-white/10 hover:text-white sm:hidden"
+        className="header-icon sm:hidden"
         to="/settings"
         aria-label="Account settings"
       >
         <UserRound className="size-4" />
       </Link>
-      <button className="grid size-9 place-items-center rounded-xl border border-white/15 text-slate-300 transition hover:bg-white/10 hover:text-white" type="button" onClick={() => void signOut()} aria-label="Sign out">
+      <button className="header-icon" type="button" onClick={() => void signOut()} aria-label="Sign out">
         <LogOut className="size-4" />
       </button>
     </div>

@@ -56,11 +56,11 @@ export function ApiDocsPage() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-30">
-        <div className="page-shell flex items-center justify-between py-2.5">
+        <div className="page-shell flex items-center justify-between py-2">
           <Brand />
           <div className="flex items-center gap-2">
             <Link
-              className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+              className="header-action"
               to="/"
             >
               <ArrowLeft className="size-4" /> <span className="hidden sm:inline">All datasets</span>
@@ -70,28 +70,28 @@ export function ApiDocsPage() {
         </div>
       </header>
 
-      <main className="page-shell py-7 lg:py-9">
-        <section className="relative overflow-hidden rounded-[2rem] bg-slate-950 px-7 py-8 text-white shadow-2xl shadow-slate-950/15 sm:px-10">
-          <div className="pointer-events-none absolute -top-32 right-0 size-80 rounded-full bg-indigo-500/25 blur-3xl" />
+      <main className="page-shell py-5 lg:py-6">
+        <section className="hero-panel px-6 py-5 sm:px-7 lg:py-6">
+          <div className="pointer-events-none absolute -top-32 right-0 size-80 rounded-full bg-indigo-200/45 blur-3xl" />
           <div className="relative max-w-4xl">
-            <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-cyan-300 uppercase">
+            <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-indigo-600 uppercase">
               <BookOpenText className="size-3.5" /> Friendly API recipes
             </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
               Start using the API in minutes
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Set up a token once, then use short, copy-pasteable commands to create, upload,
               inspect, and download a dataset.
             </p>
-            <div className="mt-5 inline-flex rounded-xl border border-white/10 bg-white/8 px-3 py-2 font-mono text-xs text-cyan-100">
+            <div className="mt-4 inline-flex rounded-lg border border-indigo-100 bg-white/80 px-3 py-2 font-mono text-xs text-indigo-700 shadow-xs">
               {apiRoot}
             </div>
           </div>
         </section>
 
-        <div className="mt-7 grid items-start gap-6 xl:grid-cols-[220px_minmax(0,1fr)]">
-          <nav className="surface-panel hidden p-4 xl:sticky xl:top-20 xl:block" aria-label="API guide sections">
+        <div className="mt-5 grid items-start gap-4 xl:grid-cols-[210px_minmax(0,1fr)]">
+          <nav className="surface-panel hidden p-3 xl:sticky xl:top-16 xl:block" aria-label="API guide sections">
             <p className="px-3 pb-2 text-[10px] font-bold tracking-[0.16em] text-slate-400 uppercase">Quick recipes</p>
             {[
               ["setup", "One-time setup"],
@@ -105,8 +105,8 @@ export function ApiDocsPage() {
             ))}
           </nav>
 
-          <article className="space-y-6">
-            <section className="surface-panel p-6 lg:p-8" id="setup">
+          <article className="space-y-4">
+            <section className="surface-panel p-5 lg:p-6" id="setup">
               <div className="flex items-center gap-3">
                 <KeyRound className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">1. One-time setup</h2>
@@ -142,7 +142,7 @@ ds_json() {
               </p>
             </section>
 
-            <section className="surface-panel p-6 lg:p-8" id="create">
+            <section className="surface-panel p-5 lg:p-6" id="create">
               <div className="flex items-center gap-3">
                 <Braces className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">2. Create a dataset</h2>
@@ -163,7 +163,7 @@ ds_json() {
   | jq`}</CodeBlock>
             </section>
 
-            <section className="surface-panel p-6 lg:p-8" id="upload">
+            <section className="surface-panel p-5 lg:p-6" id="upload">
               <div className="flex items-center gap-3">
                 <UploadCloud className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">3. Upload and publish</h2>
@@ -202,7 +202,7 @@ echo "Published revision: $REVISION"`}</CodeBlock>
               </p>
             </section>
 
-            <section className="surface-panel p-6 lg:p-8" id="browse">
+            <section className="surface-panel p-5 lg:p-6" id="browse">
               <div className="flex items-center gap-3">
                 <ListTree className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">4. Browse datasets and rows</h2>
@@ -235,7 +235,7 @@ ds \
   | jq '.rows'`}</CodeBlock>
             </section>
 
-            <section className="surface-panel p-6 lg:p-8" id="download">
+            <section className="surface-panel p-5 lg:p-6" id="download">
               <div className="flex items-center gap-3">
                 <Download className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">5. Download a repository</h2>
@@ -257,7 +257,7 @@ unzip -l sentiment-demo.zip`}</CodeBlock>
               </p>
             </section>
 
-            <section className="surface-panel p-6 lg:p-8" id="tips">
+            <section className="surface-panel p-5 lg:p-6" id="tips">
               <div className="flex items-center gap-3">
                 <BookOpenText className="size-5 text-indigo-600" />
                 <h2 className="text-xl font-semibold">Useful tips</h2>

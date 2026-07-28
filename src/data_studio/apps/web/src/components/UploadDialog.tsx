@@ -113,7 +113,7 @@ export function UploadDialog({
           </button>
         </div>
 
-        <label className={`mt-6 flex min-h-48 flex-col items-center justify-center rounded-3xl border border-dashed px-6 text-center transition ${progress ? "cursor-not-allowed border-slate-200 bg-slate-50" : "cursor-pointer border-indigo-300 bg-gradient-to-br from-indigo-50/80 to-cyan-50/70 hover:border-indigo-400 hover:from-indigo-50"}`}>
+        <label className={`mt-5 flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed px-5 text-center transition ${progress ? "cursor-not-allowed border-slate-200 bg-slate-50" : "cursor-pointer border-indigo-300 bg-gradient-to-br from-indigo-50/80 to-cyan-50/70 hover:border-indigo-400 hover:from-indigo-50"}`}>
           <input
             ref={inputRef}
             className="sr-only"

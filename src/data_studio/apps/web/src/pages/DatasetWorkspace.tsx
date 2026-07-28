@@ -113,8 +113,8 @@ function CardTab({
   canEdit: boolean;
 }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm lg:p-10">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs lg:p-7">
         {revision.card_html ? (
           <div className="card-markdown" dangerouslySetInnerHTML={{ __html: revision.card_html }} />
         ) : (
@@ -125,8 +125,8 @@ function CardTab({
           />
         )}
       </article>
-      <aside className="space-y-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <aside className="space-y-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="eyebrow">Dataset metadata</p>
           <dl className="mt-4 space-y-3 text-sm">
             {Object.entries(revision.card_metadata).slice(0, 12).map(([key, value]) => (
@@ -142,7 +142,7 @@ function CardTab({
             ) : null}
           </dl>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="eyebrow">Revision</p>
           <p className="mt-3 font-mono text-sm font-semibold text-indigo-700">{revision.revision_id}</p>
           <p className="mt-2 text-xs leading-5 text-slate-500">{revision.commit_message}</p>
@@ -429,7 +429,7 @@ function SchemaTab({ revision }: { revision: Revision }) {
   return (
     <div>
       <SelectionControls configs={revision.configs} configName={config.name} splitName={split.name} onChange={select} />
-      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-white">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="grid grid-cols-[1fr_1fr_120px] border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-semibold text-slate-500">
           <span>Column</span><span>Arrow-compatible type</span><span>Nullable</span>
         </div>
@@ -497,7 +497,7 @@ function StatisticsTab({ namespace, dataset, revision }: { namespace: string; da
 function VersionsTab({ revisions, selected }: { revisions: RevisionSummary[]; selected: string }) {
   const [params, setParams] = useSearchParams();
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
       <h2 className="font-semibold text-slate-950">Immutable revisions</h2>
       <div className="relative mt-6 ml-3 border-l border-slate-200 pl-7">
         {revisions.map((revision) => (
@@ -582,7 +582,7 @@ function SettingsTab({
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <section className="surface-panel p-6">
+      <section className="surface-panel p-5">
         <div className="flex items-center gap-3"><Shield className="size-5 text-indigo-600" /><h2 className="font-semibold">Repository access</h2></div>
         {dataset.can_edit ? (
           <form className="mt-5 space-y-4" onSubmit={(event) => void save(event)}>
@@ -643,13 +643,13 @@ function SettingsTab({
           </div>
         )}
       </section>
-      <section className="surface-panel p-6">
+      <section className="surface-panel p-5">
         <div className="flex items-center gap-3"><Globe2 className="size-5 text-indigo-600" /><h2 className="font-semibold">Compatibility contract</h2></div>
         <p className="mt-4 text-sm leading-6 text-slate-600">Folder uploads preserve relative paths and understand Dataset Card YAML, declarative configs, conventional splits, sharded filenames, and ImageFolder layouts.</p>
         <p className="mt-3 text-xs leading-5 text-slate-500">Full huggingface_hub protocol compatibility is intentionally not claimed by this release.</p>
       </section>
       {dataset.can_edit ? (
-        <section className="rounded-3xl border border-rose-200 bg-rose-50/60 p-6 lg:col-span-2">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 lg:col-span-2">
           <div className="flex items-center gap-3 text-rose-800"><Trash2 className="size-5" /><h2 className="font-semibold">Delete dataset</h2></div>
           <p className="mt-3 text-sm leading-6 text-rose-800/80">This permanently removes repository metadata, revisions, previews, and file records. Type <strong>{dataset.slug}</strong> to confirm.</p>
           {!deleting ? (
@@ -748,10 +748,10 @@ export function DatasetWorkspace() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-40">
-        <div className="page-shell flex items-center justify-between py-2.5">
+        <div className="page-shell flex items-center justify-between py-2">
           <Brand />
           <div className="flex items-center gap-2">
-            <Link className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white" to="/"><ChevronLeft className="size-4" /> All datasets</Link>
+            <Link className="header-action border-transparent shadow-none" to="/"><ChevronLeft className="size-4" /> All datasets</Link>
             <ApiGuideLink />
             <AccountControls />
           </div>
@@ -759,7 +759,7 @@ export function DatasetWorkspace() {
       </header>
       <main>
         <section className="border-b border-slate-200 bg-white/90 shadow-sm shadow-slate-900/3">
-          <div className="page-shell pt-4">
+          <div className="page-shell pt-3">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -808,7 +808,7 @@ export function DatasetWorkspace() {
                 {repository.can_edit ? <button className="button-primary" type="button" onClick={() => setUploadOpen(true)}><UploadCloud className="size-4" /> Upload revision</button> : null}
               </div>
             </div>
-            <nav className="mt-3 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
+            <nav className="mt-2 flex gap-1 overflow-x-auto" aria-label="Dataset sections">
               {tabs.map((tab) => (
                 <NavLink
                   className={({ isActive }) => `tab-link ${isActive ? "tab-link-active" : ""}`}
@@ -825,7 +825,7 @@ export function DatasetWorkspace() {
             </nav>
           </div>
         </section>
-        <section className="page-shell py-7 lg:py-8">
+        <section className="page-shell py-5 lg:py-6">
           {isSettingsRoute ? (
             <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
           ) : revisionError ? (

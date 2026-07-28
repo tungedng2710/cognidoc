@@ -152,7 +152,7 @@ export function DatasetsPage() {
   return (
     <div className="min-h-screen">
       <header className="app-header sticky top-0 z-30">
-        <div className="page-shell flex items-center justify-between py-2.5">
+        <div className="page-shell flex items-center justify-between py-2">
           <Brand />
           <div className="flex items-center gap-2">
             <ApiGuideLink />
@@ -163,38 +163,38 @@ export function DatasetsPage() {
           </div>
         </div>
       </header>
-      <main className="page-shell py-7 lg:py-9">
-        <section className="relative overflow-hidden rounded-[2rem] bg-slate-950 px-7 py-7 text-white shadow-2xl shadow-slate-950/15 sm:px-9 lg:px-10 lg:py-8">
-          <div className="pointer-events-none absolute -top-36 -right-28 size-96 rounded-full bg-indigo-500/25 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-40 left-1/3 size-80 rounded-full bg-cyan-400/15 blur-3xl" />
-          <div className="relative grid gap-7 lg:grid-cols-[1.45fr_0.55fr] lg:items-center">
+      <main className="page-shell py-5 lg:py-6">
+        <section className="hero-panel px-6 py-5 sm:px-7 lg:py-6">
+          <div className="pointer-events-none absolute -top-36 -right-28 size-96 rounded-full bg-indigo-200/40 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-40 left-1/3 size-80 rounded-full bg-cyan-200/30 blur-3xl" />
+          <div className="relative grid gap-5 lg:grid-cols-[1.45fr_0.55fr] lg:items-center">
             <div>
-              <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-cyan-300 uppercase">
+              <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-indigo-600 uppercase">
                 Hugging Face-compatible data workspace
               </p>
-              <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-white sm:text-4xl">
+              <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-slate-950">
                 Your datasets, legible and versioned.
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Upload compatible repositories without conversion, then browse cards, shards, schemas, and rows from one focused workspace.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="metric-card">
-                <Database className="size-5 text-cyan-300" />
-                <p className="mt-5 text-2xl font-semibold text-white">{datasets?.length ?? "—"}</p>
-                <p className="mt-1 text-xs font-medium text-slate-400">Repositories</p>
+                <Database className="size-5 text-indigo-500" />
+                <p className="mt-3 text-2xl font-semibold text-slate-950">{datasets?.length ?? "—"}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">Repositories</p>
               </div>
               <div className="metric-card">
-                <ShieldCheck className="size-5 text-indigo-300" />
-                <p className="mt-5 text-sm font-semibold text-white">Source preserved</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">Immutable revisions</p>
+                <ShieldCheck className="size-5 text-cyan-600" />
+                <p className="mt-3 text-sm font-semibold text-slate-900">Source preserved</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">Immutable revisions</p>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mt-7">
+        <section className="mt-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-slate-950">Repositories</h2>
@@ -210,7 +210,7 @@ export function DatasetsPage() {
               />
             </label>
           </div>
-          <div className="mt-5">
+          <div className="mt-4">
             {error ? <ErrorState message={error} retry={load} /> : null}
             {!error && datasets === null ? <LoadingState label="Loading repositories…" /> : null}
             {!error && datasets !== null && !filtered?.length ? (
@@ -221,10 +221,10 @@ export function DatasetsPage() {
               />
             ) : null}
             {filtered?.length ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {filtered.map((dataset) => (
                   <Link
-                    className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-900/5 transition hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-950/8"
+                    className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs shadow-slate-900/5 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-950/5"
                     to={`/datasets/${dataset.namespace}/${dataset.slug}`}
                     key={dataset.id}
                   >
@@ -234,14 +234,14 @@ export function DatasetsPage() {
                       </span>
                       <span className="status-pill">{dataset.visibility}</span>
                     </div>
-                    <p className="mt-5 flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                    <p className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-400">
                       <HardDrive className="size-3" /> {dataset.owner ?? dataset.namespace}
                     </p>
                     <h3 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">{dataset.slug}</h3>
                     <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-slate-500">
                       {dataset.description || "No description yet."}
                     </p>
-                    <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
+                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                       <span>{dataset.latest_revision ? `rev ${dataset.latest_revision.revision_id}` : "No revisions"}</span>
                       <span className="grid size-7 place-items-center rounded-lg bg-slate-50 text-slate-500 transition group-hover:bg-indigo-50 group-hover:text-indigo-600">
                         <ArrowRight className="size-4 transition group-hover:translate-x-0.5" />
