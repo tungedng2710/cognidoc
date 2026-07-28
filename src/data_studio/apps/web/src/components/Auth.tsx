@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../api";
 import type { User } from "../types";
@@ -156,7 +157,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, openAuth: (mode = "login") => setDialogMode(mode), signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        openAuth: (mode = "login") => setDialogMode(mode),
+        signOut,
+        updateUser: setUser,
+        clearUser: () => setUser(null),
+      }}
+    >
       {children}
       {dialogMode ? (
         <AuthDialog
@@ -184,12 +194,23 @@ export function AccountControls() {
   }
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden items-center gap-2 rounded-xl bg-white/8 px-3 py-2 text-xs font-medium text-slate-200 sm:flex">
+      <Link
+        className="hidden items-center gap-2 rounded-xl bg-white/8 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/12 hover:text-white sm:flex"
+        to="/settings"
+        aria-label="Account settings"
+      >
         <span className="grid size-6 place-items-center rounded-lg bg-indigo-500/25 text-indigo-200">
           {user.is_admin ? <ShieldCheck className="size-3.5" /> : <UserRound className="size-3.5" />}
         </span>
         {user.display_name || user.username}
-      </span>
+      </Link>
+      <Link
+        className="grid size-9 place-items-center rounded-xl border border-white/15 text-slate-300 transition hover:bg-white/10 hover:text-white sm:hidden"
+        to="/settings"
+        aria-label="Account settings"
+      >
+        <UserRound className="size-4" />
+      </Link>
       <button className="grid size-9 place-items-center rounded-xl border border-white/15 text-slate-300 transition hover:bg-white/10 hover:text-white" type="button" onClick={() => void signOut()} aria-label="Sign out">
         <LogOut className="size-4" />
       </button>

@@ -134,6 +134,11 @@ class DatasetService:
 
     def delete_repository(self, namespace: str, slug: str) -> None:
         repository = get_repository(self.db, namespace, slug)
+        upload_ids = list(
+            self.db.scalars(
+                select(UploadSession.id).where(UploadSession.repository_id == repository.id)
+            ).all()
+        )
         revision_ids = select(DatasetRevision.id).where(
             DatasetRevision.repository_id == repository.id
         )
@@ -170,6 +175,8 @@ class DatasetService:
         self.db.execute(delete(ProcessingJob).where(ProcessingJob.repository_id == repository.id))
         self.db.execute(delete(DatasetRepository).where(DatasetRepository.id == repository.id))
         self.db.commit()
+        for upload_id in upload_ids:
+            shutil.rmtree(self.settings.staging_root / upload_id, ignore_errors=True)
         if self.versioning:
             self.versioning.delete_repository(repository.id)
 

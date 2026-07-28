@@ -15,6 +15,7 @@ from data_studio_api.errors import NotFoundError, StudioError
 from data_studio_api.models import DatasetRepository, Visibility
 from data_studio_api.schemas import UserLogin, UserRegister
 from fastapi import Response
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -110,3 +111,114 @@ def test_repository_access_is_public_read_and_owner_write() -> None:
         assert exc.status_code == 403
     else:
         raise AssertionError("a non-owner must not edit a public dataset")
+
+
+def test_user_can_manage_profile_password_and_tokens_but_not_username(
+    client: TestClient,
+) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "owner",
+            "display_name": "Original name",
+            "email": "old@example.com",
+            "password": "secure-password",
+        },
+    )
+    assert registered.status_code == 201
+
+    profile = client.patch(
+        "/api/v1/auth/me",
+        json={"display_name": "New Name", "email": "NEW@example.com"},
+    )
+    assert profile.status_code == 200
+    assert profile.json()["display_name"] == "New Name"
+    assert profile.json()["email"] == "new@example.com"
+    assert profile.json()["username"] == "owner"
+
+    immutable_username = client.patch("/api/v1/auth/me", json={"username": "renamed"})
+    assert immutable_username.status_code == 422
+    assert client.get("/api/v1/auth/me").json()["username"] == "owner"
+
+    wrong_password = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "wrong-password", "new_password": "replacement-password"},
+    )
+    assert wrong_password.status_code == 400
+    assert wrong_password.json()["code"] == "invalid_current_password"
+
+    changed = client.put(
+        "/api/v1/auth/password",
+        json={
+            "current_password": "secure-password",
+            "new_password": "replacement-password",
+        },
+    )
+    assert changed.status_code == 200
+    client.post("/api/v1/auth/logout")
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 401
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": "replacement-password"},
+    ).status_code == 200
+
+    created_token = client.post(
+        "/api/v1/auth/tokens",
+        json={"name": "automation", "scopes": ["read", "write"]},
+    )
+    assert created_token.status_code == 201
+    raw_token = created_token.json()["token"]
+    assert raw_token.startswith("ds_pat_")
+    token_id = created_token.json()["id"]
+    listed_tokens = client.get("/api/v1/auth/tokens")
+    assert listed_tokens.status_code == 200
+    assert [token["id"] for token in listed_tokens.json()] == [token_id]
+    assert "token" not in listed_tokens.json()[0]
+    token_cannot_manage_account = client.get(
+        "/api/v1/auth/tokens",
+        headers={"Authorization": f"Bearer {raw_token}"},
+    )
+    assert token_cannot_manage_account.status_code == 403
+    assert token_cannot_manage_account.json()["code"] == "session_required"
+    assert client.delete(f"/api/v1/auth/tokens/{token_id}").status_code == 204
+    assert client.get("/api/v1/auth/tokens").json() == []
+
+
+def test_delete_account_removes_owned_repositories_and_session(client: TestClient) -> None:
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 201
+    assert client.post(
+        "/api/v1/datasets",
+        json={
+            "namespace": "owner",
+            "slug": "private-data",
+            "visibility": "private",
+            "description": "",
+        },
+    ).status_code == 201
+
+    rejected = client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        json={"password": "wrong-password"},
+    )
+    assert rejected.status_code == 400
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+    deleted = client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        json={"password": "secure-password"},
+    )
+    assert deleted.status_code == 204
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/datasets/owner/private-data").status_code == 404
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 401

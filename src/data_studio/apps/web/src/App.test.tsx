@@ -47,6 +47,111 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "5. Pull a complete repository" })).toBeInTheDocument();
   });
 
+  it("lets a signed-in user manage account settings while keeping username read-only", async () => {
+    const user = {
+      id: "owner-id",
+      username: "owner",
+      display_name: "Owner",
+      email: "owner@example.com",
+      is_admin: false,
+      created_at: "2026-07-22T08:00:00Z",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me") && init?.method === "PATCH") {
+        const body = JSON.parse(typeof init.body === "string" ? init.body : "{}") as {
+          display_name: string;
+          email: string;
+        };
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ ...user, ...body }),
+        });
+      }
+      if (url.endsWith("/auth/password") && init?.method === "PUT") {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      if (url.endsWith("/auth/tokens") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: () => Promise.resolve({
+            id: "token-id",
+            name: "My CLI",
+            token_prefix: "ds_pat_example",
+            token: "ds_pat_example_secret",
+            scopes: ["read", "write"],
+            expires_at: null,
+            last_used_at: null,
+            created_at: "2026-07-22T08:00:00Z",
+          }),
+        });
+      }
+      if (url.endsWith("/auth/tokens")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={["/settings"]}><App /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "Account settings" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Username/ })).toHaveAttribute("readonly");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+      target: { value: "Updated Owner" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "updated@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/auth/me",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            display_name: "Updated Owner",
+            email: "updated@example.com",
+          }),
+        }),
+      );
+    });
+
+    const passwordFields = screen.getAllByLabelText("Current password");
+    fireEvent.change(passwordFields[0]!, { target: { value: "secure-password" } });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "replacement-password" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "replacement-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/auth/password",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({
+            current_password: "secure-password",
+            new_password: "replacement-password",
+          }),
+        }),
+      );
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Token name" }), {
+      target: { value: "My CLI" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate token" }));
+    expect(await screen.findByDisplayValue("ds_pat_example_secret")).toHaveAttribute("readonly");
+  });
+
   it("highlights the active workspace tab", async () => {
     const createdAt = "2026-07-22T08:00:00Z";
     const summary = {

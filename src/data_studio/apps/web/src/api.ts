@@ -1,4 +1,6 @@
 import type {
+  ApiToken,
+  ApiTokenCreated,
   Dataset,
   DatasetConfig,
   FilePage,
@@ -74,6 +76,33 @@ export const api = {
 
   logout(): Promise<void> {
     return request("/auth/logout", { method: "POST" });
+  },
+
+  updateProfile(body: { display_name: string; email: string | null }): Promise<User> {
+    return request("/auth/me", { method: "PATCH", body: JSON.stringify(body) });
+  },
+
+  changePassword(body: { current_password: string; new_password: string }): Promise<User> {
+    return request("/auth/password", { method: "PUT", body: JSON.stringify(body) });
+  },
+
+  listTokens(): Promise<ApiToken[]> {
+    return request("/auth/tokens");
+  },
+
+  createToken(body: { name: string; scopes: ("read" | "write")[] }): Promise<ApiTokenCreated> {
+    return request("/auth/tokens", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  revokeToken(tokenId: string): Promise<void> {
+    return request(`/auth/tokens/${encodeURIComponent(tokenId)}`, { method: "DELETE" });
+  },
+
+  deleteAccount(password: string): Promise<void> {
+    return request("/auth/me", {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    });
   },
 
   async listDatasets(): Promise<Dataset[]> {

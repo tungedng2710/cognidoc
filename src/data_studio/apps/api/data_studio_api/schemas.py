@@ -137,6 +137,44 @@ class UserRead(OrmModel):
     created_at: datetime
 
 
+class UserProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    email: str | None = Field(default=None, max_length=320)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalized_display_name(cls, display_name: str | None) -> str | None:
+        if display_name is None:
+            return None
+        normalized = display_name.strip()
+        if not normalized:
+            raise ValueError("display name cannot be empty")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def plausible_email(cls, email: str | None) -> str | None:
+        if email is None:
+            return None
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        if normalized.count("@") != 1 or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("email must be a valid address")
+        return normalized
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class AccountDelete(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class ApiTokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     scopes: list[ApiTokenScope] = Field(default_factory=default_api_token_scopes)

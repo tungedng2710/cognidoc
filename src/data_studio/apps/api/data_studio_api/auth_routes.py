@@ -1,7 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy import func, select, update
+from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,19 +15,25 @@ from .auth import (
     hash_password,
     issue_api_token,
     require_scope,
+    verify_password,
 )
 from .config import Settings, get_settings
 from .database import get_db
 from .errors import ConflictError, NotFoundError, StudioError
 from .models import ApiToken, DatasetRepository, User
 from .schemas import (
+    AccountDelete,
     ApiTokenCreate,
     ApiTokenCreated,
     ApiTokenRead,
+    PasswordChange,
     UserLogin,
+    UserProfileUpdate,
     UserRead,
     UserRegister,
 )
+from .service import DatasetService
+from .storage import ObjectStorage
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 Database = Annotated[Session, Depends(get_db)]
@@ -45,6 +51,26 @@ def _set_session_cookie(response: Response, user: User, settings: Settings) -> N
         samesite="lax",
         path="/",
     )
+
+
+def _require_session(principal: Principal) -> None:
+    if principal.credential != "session":
+        raise StudioError(
+            403,
+            "session_required",
+            "Browser session required",
+            "Manage account settings from a signed-in browser session.",
+        )
+
+
+def _require_current_password(user: User, password: str) -> None:
+    if not verify_password(password, user.password_hash):
+        raise StudioError(
+            400,
+            "invalid_current_password",
+            "Incorrect password",
+            "The current password is incorrect.",
+        )
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
@@ -109,8 +135,59 @@ def me(principal: CurrentPrincipal, db: Database) -> User:
     return user
 
 
+@router.patch("/me", response_model=UserRead)
+def update_profile(
+    body: UserProfileUpdate,
+    principal: CurrentPrincipal,
+    db: Database,
+) -> User:
+    _require_session(principal)
+    user = db.get(User, principal.user_id)
+    if user is None:
+        raise NotFoundError("User")
+    if "display_name" in body.model_fields_set and body.display_name is not None:
+        user.display_name = body.display_name
+    if "email" in body.model_fields_set:
+        user.email = body.email
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("That email is already registered.") from exc
+    db.refresh(user)
+    return user
+
+
+@router.put("/password", response_model=UserRead)
+def change_password(
+    body: PasswordChange,
+    response: Response,
+    principal: CurrentPrincipal,
+    db: Database,
+    settings: SettingsDependency,
+) -> User:
+    _require_session(principal)
+    user = db.get(User, principal.user_id)
+    if user is None:
+        raise NotFoundError("User")
+    _require_current_password(user, body.current_password)
+    if verify_password(body.new_password, user.password_hash):
+        raise StudioError(
+            400,
+            "password_unchanged",
+            "Choose a new password",
+            "The new password must be different from the current password.",
+        )
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+    db.refresh(user)
+    _set_session_cookie(response, user, settings)
+    return user
+
+
 @router.get("/tokens", response_model=list[ApiTokenRead])
 def list_tokens(principal: CurrentPrincipal, db: Database) -> list[ApiToken]:
+    _require_session(principal)
     return list(
         db.scalars(
             select(ApiToken)
@@ -126,13 +203,7 @@ def create_token(
     principal: CurrentPrincipal,
     db: Database,
 ) -> dict[str, object]:
-    if principal.credential != "session":
-        raise StudioError(
-            403,
-            "session_required",
-            "Browser session required",
-            "Create personal API tokens from a signed-in browser session.",
-        )
+    _require_session(principal)
     require_scope(principal, "write")
     raw_token = issue_api_token()
     stored = ApiToken(
@@ -159,6 +230,7 @@ def create_token(
 
 @router.delete("/tokens/{token_id}", status_code=204)
 def delete_token(token_id: str, principal: CurrentPrincipal, db: Database) -> Response:
+    _require_session(principal)
     token = db.scalar(
         select(ApiToken).where(
             ApiToken.id == token_id,
@@ -170,3 +242,38 @@ def delete_token(token_id: str, principal: CurrentPrincipal, db: Database) -> Re
     db.delete(token)
     db.commit()
     return Response(status_code=204)
+
+
+@router.delete("/me", status_code=204)
+def delete_account(
+    body: AccountDelete,
+    request: Request,
+    response: Response,
+    principal: CurrentPrincipal,
+    db: Database,
+    settings: SettingsDependency,
+) -> Response:
+    _require_session(principal)
+    user = db.get(User, principal.user_id)
+    if user is None:
+        raise NotFoundError("User")
+    _require_current_password(user, body.password)
+
+    storage: ObjectStorage = request.app.state.storage
+    datasets = DatasetService(db, storage, settings)
+    repositories = list(
+        db.execute(
+            select(DatasetRepository.namespace, DatasetRepository.slug).where(
+                DatasetRepository.owner_id == user.id
+            )
+        ).all()
+    )
+    for namespace, slug in repositories:
+        datasets.delete_repository(namespace, slug)
+
+    db.execute(delete(ApiToken).where(ApiToken.user_id == user.id))
+    db.delete(user)
+    db.commit()
+    response.delete_cookie(SESSION_COOKIE, path="/", samesite="lax")
+    response.status_code = 204
+    return response

@@ -9,6 +9,8 @@ export interface AuthContextValue {
   loading: boolean;
   openAuth: (mode?: AuthMode) => void;
   signOut: () => Promise<void>;
+  updateUser: (user: User) => void;
+  clearUser: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

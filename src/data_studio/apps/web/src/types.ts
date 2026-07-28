@@ -38,6 +38,20 @@ export interface User {
   created_at: string;
 }
 
+export interface ApiToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  scopes: string[];
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface ApiTokenCreated extends ApiToken {
+  token: string;
+}
+
 export interface RepositoryFile {
   path: string;
   size_bytes: number;
