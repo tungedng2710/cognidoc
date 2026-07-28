@@ -121,7 +121,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Account settings" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /Username/ })).toHaveAttribute("readonly");
     fireEvent.click(screen.getByRole("button", { name: "Open user menu" }));
-    expect(screen.getByRole("menuitem", { name: "User's repositories" })).toHaveAttribute(
+    expect(screen.getByRole("menuitem", { name: "My Datasets" })).toHaveAttribute(
       "href",
       "/users/owner/repositories",
     );

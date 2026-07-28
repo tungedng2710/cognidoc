@@ -248,7 +248,7 @@ export function AccountControls() {
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            <Database className="size-4" /> User&apos;s repositories
+            <Database className="size-4" /> My Datasets
           </Link>
           <Link
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
