@@ -4,6 +4,7 @@ import mimetypes
 import shutil
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from fastapi import UploadFile
@@ -19,6 +20,13 @@ from .domain.layout import DetectedConfig, detect_layout, is_previewable
 from .domain.manifest import ManifestFile, build_manifest
 from .domain.paths import normalize_repository_path
 from .domain.preview import compute_statistics, preview_split
+from .domain.viewer import (
+    ViewerPage,
+    imagefolder_metadata_path,
+    imagefolder_page,
+    parse_viewer_filter,
+    query_tabular_page,
+)
 from .errors import ConflictError, NotFoundError, ValidationError
 from .models import (
     DatasetConfig,
@@ -255,6 +263,81 @@ class DatasetService:
         if repository_file is None:
             raise NotFoundError(f"File {normalized}")
         return repository_file
+
+    def viewer_page(
+        self,
+        revision: DatasetRevision,
+        split: DatasetSplit,
+        *,
+        raw_filter: str | None,
+        offset: int,
+        limit: int,
+    ) -> ViewerPage:
+        columns = {
+            str(field["name"])
+            for field in split.schema_json
+            if isinstance(field, dict) and "name" in field
+        }
+        filter_ = parse_viewer_filter(raw_filter, columns)
+        repository_paths = list(split.data_files)
+        metadata_path = (
+            imagefolder_metadata_path(repository_paths)
+            if split.config.builder_name == "imagefolder"
+            else None
+        )
+        if split.config.builder_name == "imagefolder" and metadata_path is None:
+            return imagefolder_page(
+                repository_paths,
+                None,
+                None,
+                filter_,
+                offset,
+                limit,
+            )
+
+        required_paths = [metadata_path] if metadata_path else repository_paths
+        records = self.db.scalars(
+            select(RepositoryFile).where(
+                RepositoryFile.revision_id == revision.id,
+                RepositoryFile.path.in_(required_paths),
+            )
+        ).all()
+        records_by_path = {record.path: record for record in records}
+        missing = [path for path in required_paths if path not in records_by_path]
+        if missing:
+            raise NotFoundError(f"Viewer source file {missing[0]}")
+
+        self.settings.staging_root.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="viewer-", dir=self.settings.staging_root) as temp_name:
+            temp_root = Path(temp_name)
+            local_files: dict[str, Path] = {}
+            for index, repository_path in enumerate(required_paths):
+                suffix = Path(repository_path).suffix.lower()
+                destination = temp_root / f"{index:06d}{suffix}"
+                with destination.open("wb") as handle:
+                    handle.writelines(
+                        self.storage.iter_object(
+                            records_by_path[repository_path].storage_object_key
+                        )
+                    )
+                local_files[repository_path] = destination
+
+            page = query_tabular_page(
+                [local_files[path] for path in required_paths],
+                filter_,
+                offset,
+                limit,
+            )
+            if metadata_path:
+                return imagefolder_page(
+                    repository_paths,
+                    metadata_path,
+                    page,
+                    filter_,
+                    offset,
+                    limit,
+                )
+            return page
 
     def revision_archive(
         self,
@@ -701,45 +784,3 @@ def repository_payload(
         "can_edit": bool(viewer_id and (viewer_is_admin or repository.owner_id == viewer_id)),
         "latest_revision": latest,
     }
-
-
-def apply_viewer_filter(rows: list[dict[str, Any]], raw_filter: str | None) -> list[dict[str, Any]]:
-    if not raw_filter:
-        return rows
-    try:
-        value = json.loads(raw_filter)
-    except json.JSONDecodeError as exc:
-        raise ValidationError("invalid_filter", "Filter must be valid JSON.") from exc
-    if not isinstance(value, dict) or not {"column", "op", "value"} <= set(value):
-        raise ValidationError("invalid_filter", "Filter requires column, op, and value fields.")
-    column, operator, expected = value["column"], value["op"], value["value"]
-    if operator not in {"eq", "ne", "contains", "gt", "gte", "lt", "lte"}:
-        raise ValidationError("invalid_filter", f"Unsupported filter operator: {operator}")
-
-    def matches(row: dict[str, Any]) -> bool:
-        actual: Any = row.get(str(column))
-        if operator == "eq":
-            return bool(actual == expected)
-        if operator == "ne":
-            return bool(actual != expected)
-        if operator == "contains":
-            return str(expected).lower() in str(actual).lower()
-        if isinstance(actual, str) and isinstance(expected, str):
-            if operator == "gt":
-                return actual > expected
-            if operator == "gte":
-                return actual >= expected
-            if operator == "lt":
-                return actual < expected
-            return actual <= expected
-        if isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
-            if operator == "gt":
-                return actual > expected
-            if operator == "gte":
-                return actual >= expected
-            if operator == "lt":
-                return actual < expected
-            return actual <= expected
-        return False
-
-    return [row for row in rows if matches(row)]

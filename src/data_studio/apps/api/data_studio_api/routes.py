@@ -43,7 +43,6 @@ from .schemas import (
 )
 from .service import (
     DatasetService,
-    apply_viewer_filter,
     get_repository,
     repository_payload,
     resolve_revision,
@@ -406,6 +405,7 @@ def viewer(
     config_name: str,
     split_name: str,
     db: Database,
+    datasets: Service,
     principal: OptionalPrincipal,
     revision: str = "main",
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -415,9 +415,15 @@ def viewer(
 ) -> ViewerResponse:
     _repository_for_read(db, namespace, dataset, principal)
     resolved, split = _resolve_split(db, namespace, dataset, revision, config_name, split_name)
-    filtered = apply_viewer_filter(split.preview_json, filter_)
+    page = datasets.viewer_page(
+        resolved,
+        split,
+        raw_filter=filter_,
+        offset=offset,
+        limit=limit,
+    )
     selected = [column for column in columns.split(",") if column] if columns else None
-    rows = filtered[offset : offset + limit]
+    rows = page.rows
     if selected is not None:
         rows = [{key: row.get(key) for key in selected if key in row} for row in rows]
     return ViewerResponse(
@@ -427,8 +433,8 @@ def viewer(
         split=split_name,
         offset=offset,
         limit=limit,
-        total_rows=split.num_rows,
-        available_rows=len(filtered),
+        total_rows=page.total_rows,
+        available_rows=page.available_rows,
         rows=rows,
         schema_=split.schema_json,
         capabilities={
@@ -436,7 +442,7 @@ def viewer(
             "filter": True,
             "global_sort": False,
             "text_search": False,
-            "preview_is_bounded": True,
+            "preview_is_bounded": False,
         },
     )
 

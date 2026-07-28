@@ -264,24 +264,27 @@ function ViewerTab({
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
         <p>
-          <span className="font-semibold text-slate-800">{selectedSplit.num_rows?.toLocaleString() ?? "Unknown"}</span> rows
+          <span className="font-semibold text-slate-800">
+            {(viewer?.total_rows ?? selectedSplit.num_rows)?.toLocaleString() ?? "Unknown"}
+          </span>{" "}
+          rows
           <span className="mx-2">·</span>{formatBytes(selectedSplit.num_bytes)}
           <span className="mx-2">·</span>{selectedSplit.schema.length} columns
         </p>
         <p>
-          {viewer ? `${viewer.available_rows.toLocaleString()} indexed rows available` : "Reading indexed preview…"}
+          {viewer ? `${viewer.available_rows.toLocaleString()} rows available` : "Reading rows…"}
           {filter ? " for this filter" : ""}
         </p>
       </div>
       <div className="mt-4">
         {error ? <ErrorState message={error} /> : null}
-        {!error && !viewer ? <LoadingState label="Reading immutable preview…" /> : null}
-        {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty, the indexed preview ended, or the current filter has no matches." /> : null}
+        {!error && !viewer ? <LoadingState label="Reading dataset…" /> : null}
+        {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty or the current filter has no matches." /> : null}
         {viewer?.rows.length ? <DataTable rows={viewer.rows} schema={viewer.schema} namespace={namespace} dataset={dataset} revision={revision.revision_id} rowOffset={offset} /> : null}
         {viewer ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
             <p>
-              Showing <span className="font-semibold text-slate-800">{viewer.rows.length ? offset + 1 : 0}–{offset + viewer.rows.length}</span> of {viewer.available_rows.toLocaleString()} indexed rows
+              Showing <span className="font-semibold text-slate-800">{viewer.rows.length ? offset + 1 : 0}–{offset + viewer.rows.length}</span> of {viewer.available_rows.toLocaleString()} rows
             </p>
             <div className="flex gap-2">
               <button className="button-secondary min-h-9 px-3" type="button" disabled={offset === 0} onClick={() => changePage(offset - limit)}><ChevronLeft className="size-4" /> Previous</button>

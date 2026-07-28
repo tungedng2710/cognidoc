@@ -1,3 +1,5 @@
+import json
+
 from data_studio_api.config import get_settings
 from fastapi.testclient import TestClient
 
@@ -86,7 +88,7 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     assert viewer.status_code == 200, viewer.text
     assert viewer.json()["rows"] == [{"text": "excellent", "label": 1, "meta": {"lang": "en"}}]
     assert viewer.json()["available_rows"] == 2
-    assert viewer.json()["capabilities"]["preview_is_bounded"] is True
+    assert viewer.json()["capabilities"]["preview_is_bounded"] is False
 
     download = client.get(
         f"/api/v1/datasets/research/sentiment/blob/{revision['revision_id']}/"
@@ -121,6 +123,70 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     assert file_page.status_code == 200
     assert file_page.json()["total"] == 1
     assert file_page.json()["items"][0]["path"] == "data/train-00000-of-00001.jsonl"
+
+
+def test_viewer_pages_and_filters_rows_beyond_the_ingestion_preview(
+    client: TestClient,
+) -> None:
+    _create_repository(client)
+    create = client.post(
+        "/api/v1/datasets/research/sentiment/uploads",
+        json={"commit_message": "Upload more than one preview page"},
+    )
+    assert create.status_code == 201, create.text
+    upload_id = create.json()["id"]
+    content = b"".join(
+        (
+            json.dumps(
+                {
+                    "id": index,
+                    "text": "find-this-row" if index == 129 else f"row-{index}",
+                }
+            ).encode()
+            + b"\n"
+        )
+        for index in range(130)
+    )
+    uploaded = client.post(
+        f"/api/v1/uploads/{upload_id}/files",
+        files=[
+            ("files", ("train.jsonl", content, "application/x-ndjson")),
+            ("paths", (None, "train.jsonl")),
+        ],
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    complete = client.post(
+        f"/api/v1/uploads/{upload_id}/complete",
+        json={"expected_file_count": 1},
+    )
+    assert complete.status_code == 200, complete.text
+    revision_id = complete.json()["revision_id"]
+    viewer_path = "/api/v1/datasets/research/sentiment/viewer/default/train"
+
+    third_page = client.get(
+        viewer_path,
+        params={"revision": revision_id, "offset": 100, "limit": 50},
+    )
+    assert third_page.status_code == 200, third_page.text
+    assert third_page.json()["total_rows"] == 130
+    assert third_page.json()["available_rows"] == 130
+    assert len(third_page.json()["rows"]) == 30
+    assert third_page.json()["rows"][0]["id"] == 100
+    assert third_page.json()["rows"][-1]["id"] == 129
+    assert third_page.json()["capabilities"]["preview_is_bounded"] is False
+
+    filtered = client.get(
+        viewer_path,
+        params={
+            "revision": revision_id,
+            "filter": json.dumps(
+                {"column": "text", "op": "contains", "value": "find-this-row"}
+            ),
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["available_rows"] == 1
+    assert filtered.json()["rows"] == [{"id": 129, "text": "find-this-row"}]
 
 
 def test_retrying_same_tree_is_idempotent(client: TestClient) -> None:
