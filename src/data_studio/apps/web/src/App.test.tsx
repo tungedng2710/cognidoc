@@ -212,19 +212,34 @@ describe("App", () => {
           ok: true,
           status: 200,
           json: () => Promise.resolve({
-            items: [{
-              id: "dataset-id",
-              namespace: "owner",
-              slug: "my-data",
-              visibility: "private",
-              description: "Owned repository",
-              default_branch: "main",
-              created_at: "2026-07-22T08:00:00Z",
-              updated_at: "2026-07-22T08:00:00Z",
-              owner: "owner",
-              can_edit: true,
-              latest_revision: null,
-            }],
+            items: [
+              {
+                id: "dataset-id",
+                namespace: "owner",
+                slug: "my-data",
+                visibility: "private",
+                description: "Owned repository",
+                default_branch: "main",
+                created_at: "2026-07-22T08:00:00Z",
+                updated_at: "2026-07-22T08:00:00Z",
+                owner: "owner",
+                can_edit: true,
+                latest_revision: null,
+              },
+              {
+                id: "public-dataset-id",
+                namespace: "someone-else",
+                slug: "public-data",
+                visibility: "public",
+                description: "Another user's public repository",
+                default_branch: "main",
+                created_at: "2026-07-22T08:00:00Z",
+                updated_at: "2026-07-22T08:00:00Z",
+                owner: "someone-else",
+                can_edit: false,
+                latest_revision: null,
+              },
+            ],
           }),
         });
       }
@@ -240,6 +255,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Owner's repositories" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "my-data" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "public-data" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/datasets?owner=owner",
       expect.objectContaining({ credentials: "include" }),

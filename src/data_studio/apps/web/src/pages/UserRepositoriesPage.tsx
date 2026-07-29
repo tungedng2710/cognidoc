@@ -34,10 +34,12 @@ export function UserRepositoriesPage() {
   }
   if (!user) return <Navigate to="/" replace />;
 
-  const filtered = datasets?.filter((dataset) =>
-    `${dataset.namespace}/${dataset.slug} ${dataset.description}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const filtered = datasets?.filter(
+    (dataset) =>
+      dataset.owner === username
+      && `${dataset.namespace}/${dataset.slug} ${dataset.description}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
   const isCurrentUser = username === user.username;
   const ownerLabel = isCurrentUser ? user.display_name || user.username : username;

@@ -117,9 +117,9 @@ export const api = {
   },
 
   async listDatasets(owner?: string): Promise<Dataset[]> {
-    const params = new URLSearchParams();
-    if (owner) params.set("owner", owner);
-    const suffix = params.size ? `?${params}` : "";
+    const suffix = owner
+      ? `?${new URLSearchParams({ owner }).toString()}`
+      : "";
     const response = await request<{ items: Dataset[] }>(`/datasets${suffix}`);
     return response.items;
   },
