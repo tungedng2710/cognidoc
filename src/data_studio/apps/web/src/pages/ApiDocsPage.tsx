@@ -63,8 +63,8 @@ const apiRoot = `${window.location.origin}/api/v1`;
 export function ApiDocsPage() {
   return (
     <div className="min-h-screen">
-      <header className="app-header sticky top-0 z-30">
-        <div className="page-shell flex items-center justify-between py-2">
+      <header className="app-header">
+        <div className="app-header-bar page-shell">
           <Brand />
           <div className="flex items-center gap-2">
             <Link
