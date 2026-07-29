@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,6 +11,11 @@ ApiTokenScope = Literal["read", "write"]
 
 def default_api_token_scopes() -> list[ApiTokenScope]:
     return ["read", "write"]
+
+
+def normalize_dataset_slug(value: str) -> str:
+    normalized = re.sub(r"\s+", "-", value.strip().lower())
+    return re.sub(r"-{2,}", "-", normalized)
 
 
 class OrmModel(BaseModel):
@@ -30,6 +36,11 @@ class DatasetCreate(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,95}$")
     visibility: Visibility = Visibility.private
     description: str = Field(default="", max_length=2_000)
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def normalize_slug(cls, value: Any) -> Any:
+        return normalize_dataset_slug(value) if isinstance(value, str) else value
 
 
 class DatasetPatch(BaseModel):

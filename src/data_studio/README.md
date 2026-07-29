@@ -111,7 +111,8 @@ docker compose --env-file .env -f infrastructure/docker-compose.yml down
 
 ## Demo workflow
 
-1. Select **New dataset**, enter a namespace and dataset name, and choose visibility.
+1. Select **New dataset**, enter a namespace and dataset name, and choose visibility. Dataset names
+   are lowercased automatically, and whitespace between words becomes `-`.
 2. Select **Upload revision** on the dataset page.
 3. Choose a local Hugging Face-compatible repository folder. The browser sends its relative paths;
    the source folder is not rewritten.

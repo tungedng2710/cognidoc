@@ -159,6 +159,11 @@ ds_json() {
                 <InlineCode>private</InlineCode>, <InlineCode>internal</InlineCode>, or
                 <InlineCode>public</InlineCode>.
               </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Dataset names are lowercased automatically, and spaces between words become
+                <InlineCode>-</InlineCode>. For example, <InlineCode>License plate</InlineCode>
+                becomes <InlineCode>license-plate</InlineCode>.
+              </p>
               <CodeBlock>{String.raw`ds_json \
   --data '{
     "namespace": "owner",

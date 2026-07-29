@@ -317,6 +317,19 @@ def test_anonymous_user_cannot_create_dataset(client: TestClient) -> None:
     assert response.json()["code"] == "authentication_required"
 
 
+def test_dataset_name_is_normalized_when_created(client: TestClient) -> None:
+    _register(client, "owner")
+
+    response = client.post(
+        "/api/v1/datasets",
+        json={"namespace": "owner", "slug": "License plate"},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["slug"] == "license-plate"
+    assert client.get("/api/v1/datasets/owner/license-plate").status_code == 200
+
+
 def test_public_read_and_owner_only_mutations(client: TestClient) -> None:
     _register(client, "owner")
     created = client.post(

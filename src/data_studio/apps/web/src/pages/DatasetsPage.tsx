@@ -15,6 +15,7 @@ import { AccountControls } from "../components/Auth";
 import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
+import { normalizeDatasetSlug } from "../dataset-slug";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { StudioSelect } from "../components/StudioSelect";
 import type { Dataset, Visibility } from "../types";
@@ -49,10 +50,20 @@ function CreateDatasetDialog({ close }: { close: () => void }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const normalizedSlug = normalizeDatasetSlug(slug);
+    if (!normalizedSlug) {
+      setError("Enter a dataset name.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      const dataset = await api.createDataset({ namespace, slug, visibility, description });
+      const dataset = await api.createDataset({
+        namespace,
+        slug: normalizedSlug,
+        visibility,
+        description,
+      });
       await navigate(`/datasets/${dataset.namespace}/${dataset.slug}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create the dataset.");
@@ -92,11 +103,16 @@ function CreateDatasetDialog({ close }: { close: () => void }) {
               className="field-input"
               required
               autoFocus
-              pattern="[a-z0-9][a-z0-9._-]*"
               placeholder="support-tickets"
               value={slug}
               onChange={(event) => setSlug(event.target.value)}
+              onBlur={() => setSlug(normalizeDatasetSlug(slug))}
             />
+            {slug ? (
+              <span className="mt-1 text-xs font-normal text-slate-500">
+                Saved as {normalizeDatasetSlug(slug)}
+              </span>
+            ) : null}
           </label>
         </div>
         <label className="field-label mt-4">

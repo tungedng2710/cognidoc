@@ -60,6 +60,9 @@ API and does not implement the complete `huggingface_hub` protocol.
 The namespace is usually your username. Visibility can be `private`, `internal`,
 or `public`.
 
+Dataset names are normalized when they are created. For example,
+`License plate` becomes `license-plate`.
+
 ```bash
 ds_json \
   --data '{
