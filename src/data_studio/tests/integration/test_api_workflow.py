@@ -1,7 +1,11 @@
 import json
+from io import BytesIO
 
+import pyarrow as pa
+import pyarrow.parquet as parquet
 from data_studio_api.config import get_settings
 from fastapi.testclient import TestClient
+from PIL import Image
 
 
 def _register(client: TestClient, username: str = "owner") -> dict:
@@ -87,6 +91,7 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     )
     assert viewer.status_code == 200, viewer.text
     assert viewer.json()["rows"] == [{"text": "excellent", "label": 1, "meta": {"lang": "en"}}]
+    assert viewer.json()["row_indices"] == [0]
     assert viewer.json()["available_rows"] == 2
     assert viewer.json()["capabilities"]["preview_is_bounded"] is False
 
@@ -173,20 +178,124 @@ def test_viewer_pages_and_filters_rows_beyond_the_ingestion_preview(
     assert len(third_page.json()["rows"]) == 30
     assert third_page.json()["rows"][0]["id"] == 100
     assert third_page.json()["rows"][-1]["id"] == 129
+    assert third_page.json()["row_indices"] == list(range(100, 130))
     assert third_page.json()["capabilities"]["preview_is_bounded"] is False
 
     filtered = client.get(
         viewer_path,
         params={
             "revision": revision_id,
-            "filter": json.dumps(
-                {"column": "text", "op": "contains", "value": "find-this-row"}
-            ),
+            "filter": json.dumps({"column": "text", "op": "contains", "value": "find-this-row"}),
         },
     )
     assert filtered.status_code == 200, filtered.text
     assert filtered.json()["available_rows"] == 1
     assert filtered.json()["rows"] == [{"id": 129, "text": "find-this-row"}]
+    assert filtered.json()["row_indices"] == [129]
+
+
+def test_parquet_image_cells_are_served_as_cached_thumbnails(
+    client: TestClient,
+) -> None:
+    _create_repository(client)
+    image_output = BytesIO()
+    Image.new("RGB", (640, 480), color=(40, 90, 180)).save(image_output, format="PNG")
+    image_bytes = image_output.getvalue()
+    image_type = pa.struct(
+        [
+            pa.field("bytes", pa.binary()),
+            pa.field("path", pa.string()),
+        ]
+    )
+    table = pa.table(
+        {
+            "image": pa.array(
+                [{"bytes": image_bytes, "path": "example.png"}],
+                type=image_type,
+            ),
+            "label": ["example"],
+        }
+    )
+    parquet_output = BytesIO()
+    parquet.write_table(table, parquet_output)
+
+    create = client.post(
+        "/api/v1/datasets/research/sentiment/uploads",
+        json={"commit_message": "Upload embedded image Parquet"},
+    )
+    assert create.status_code == 201, create.text
+    upload_id = create.json()["id"]
+    uploaded = client.post(
+        f"/api/v1/uploads/{upload_id}/files",
+        files=[
+            (
+                "files",
+                (
+                    "train.parquet",
+                    parquet_output.getvalue(),
+                    "application/vnd.apache.parquet",
+                ),
+            ),
+            ("paths", (None, "train.parquet")),
+        ],
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    complete = client.post(
+        f"/api/v1/uploads/{upload_id}/complete",
+        json={"expected_file_count": 1},
+    )
+    assert complete.status_code == 200, complete.text
+    revision_id = complete.json()["revision_id"]
+
+    viewer = client.get(
+        "/api/v1/datasets/research/sentiment/viewer/default/train",
+        params={"revision": revision_id},
+    )
+    assert viewer.status_code == 200, viewer.text
+    assert viewer.json()["row_indices"] == [0]
+    assert viewer.json()["rows"] == [
+        {
+            "image": {
+                "_type": "image",
+                "row": 0,
+                "column": "image",
+                "path": "example.png",
+                "size": len(image_bytes),
+            },
+            "label": "example",
+        }
+    ]
+
+    media_path = "/api/v1/datasets/research/sentiment/viewer-media/default/train/0/image"
+    thumbnail = client.get(
+        media_path,
+        params={"revision": revision_id},
+    )
+    assert thumbnail.status_code == 200, thumbnail.text
+    assert thumbnail.headers["content-type"] == "image/webp"
+    with Image.open(BytesIO(thumbnail.content)) as image:
+        assert image.width <= 320
+        assert image.height <= 320
+
+    cached = client.get(
+        media_path,
+        params={"revision": revision_id},
+    )
+    assert cached.content == thumbnail.content
+    full_image = client.get(
+        media_path,
+        params={"revision": revision_id, "thumbnail": False},
+    )
+    assert full_image.status_code == 200
+    assert full_image.headers["content-type"] == "image/png"
+    assert full_image.content == image_bytes
+
+    assert client.post("/api/v1/auth/logout").status_code == 204
+    anonymous = client.get(
+        media_path,
+        params={"revision": revision_id},
+    )
+    assert anonymous.status_code == 401
 
 
 def test_retrying_same_tree_is_idempotent(client: TestClient) -> None:

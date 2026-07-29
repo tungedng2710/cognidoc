@@ -280,7 +280,19 @@ function ViewerTab({
         {error ? <ErrorState message={error} /> : null}
         {!error && !viewer ? <LoadingState label="Reading dataset…" /> : null}
         {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty or the current filter has no matches." /> : null}
-        {viewer?.rows.length ? <DataTable rows={viewer.rows} schema={viewer.schema} namespace={namespace} dataset={dataset} revision={revision.revision_id} rowOffset={offset} /> : null}
+        {viewer?.rows.length ? (
+          <DataTable
+            rows={viewer.rows}
+            schema={viewer.schema}
+            namespace={namespace}
+            dataset={dataset}
+            revision={revision.revision_id}
+            config={selectedConfig.name}
+            split={selectedSplit.name}
+            rowOffset={offset}
+            rowIndices={viewer.row_indices}
+          />
+        ) : null}
         {viewer ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
             <p>

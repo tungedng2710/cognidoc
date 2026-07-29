@@ -5,6 +5,32 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { FieldSchema } from "../types";
 
+interface EmbeddedImageReference {
+  _type: "image";
+  row: number;
+  column: string;
+  path: string | null;
+  size: number | null;
+}
+
+interface PreviewedImage {
+  url: string;
+  alt: string;
+}
+
+function isEmbeddedImageReference(value: unknown): value is EmbeddedImageReference {
+  return (
+    typeof value === "object"
+    && value !== null
+    && "_type" in value
+    && value._type === "image"
+    && "row" in value
+    && typeof value.row === "number"
+    && "column" in value
+    && typeof value.column === "string"
+  );
+}
+
 function isImageReference(value: unknown): value is { _type: "image"; path: string } {
   return (
     typeof value === "object" &&
@@ -33,16 +59,67 @@ function Cell({
   namespace,
   dataset,
   revision,
+  config,
+  split,
   inspect,
+  previewImage,
 }: {
   value: unknown;
   namespace: string;
   dataset: string;
   revision: string;
+  config: string;
+  split: string;
   inspect: () => void;
+  previewImage: (image: PreviewedImage) => void;
 }) {
   if (value === null || value === undefined) {
     return <span className="font-mono text-xs text-slate-300">null</span>;
+  }
+  if (isEmbeddedImageReference(value)) {
+    const thumbnailUrl = api.viewerMediaUrl(
+      namespace,
+      dataset,
+      config,
+      split,
+      value.row,
+      value.column,
+      revision,
+    );
+    const fullImageUrl = api.viewerMediaUrl(
+      namespace,
+      dataset,
+      config,
+      split,
+      value.row,
+      value.column,
+      revision,
+      false,
+    );
+    const imageAlt = value.path || `Image at row ${value.row + 1}`;
+    return (
+      <button
+        className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden font-medium text-indigo-700 hover:text-indigo-500"
+        type="button"
+        onClick={() => previewImage({ url: fullImageUrl, alt: imageAlt })}
+      >
+        <span className="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100">
+          <ImageIcon className="absolute size-4" />
+          <img
+            className="relative size-full object-cover"
+            src={thumbnailUrl}
+            alt={imageAlt}
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {value.path || `Image · row ${value.row + 1}`}
+        </span>
+      </button>
+    );
   }
   if (isImageReference(value)) {
     return (
@@ -103,6 +180,53 @@ function Cell({
   if (typeof value === "symbol") return <span>{value.description ?? "symbol"}</span>;
   if (typeof value === "function") return <span className="text-slate-400">[function]</span>;
   return <span className="text-slate-400">[unsupported value]</span>;
+}
+
+function ImageLightbox({
+  image,
+  close,
+}: {
+  image: PreviewedImage;
+  close: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [close]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <section
+        className="relative flex max-h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Image preview"
+      >
+        <button
+          className="absolute top-3 right-3 z-10 grid size-9 place-items-center rounded-xl bg-slate-950/70 text-white ring-1 ring-white/15 transition hover:bg-slate-800"
+          type="button"
+          onClick={close}
+          aria-label="Close image preview"
+        >
+          <X className="size-4" />
+        </button>
+        <img
+          className="max-h-[calc(100vh-2rem)] max-w-full object-contain"
+          src={image.url}
+          alt={image.alt}
+        />
+      </section>
+    </div>
+  );
 }
 
 interface InspectedCell {
@@ -172,7 +296,10 @@ interface DataTableProps {
   namespace: string;
   dataset: string;
   revision: string;
+  config: string;
+  split: string;
   rowOffset?: number;
+  rowIndices?: number[];
 }
 
 export function DataTable({
@@ -181,14 +308,19 @@ export function DataTable({
   namespace,
   dataset,
   revision,
+  config,
+  split,
   rowOffset = 0,
+  rowIndices,
 }: DataTableProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [copyError, setCopyError] = useState(false);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
+  const [previewedImage, setPreviewedImage] = useState<PreviewedImage | null>(null);
   const columns = schema.length ? schema.map((field) => field.name) : Object.keys(rows[0] ?? {});
   const gridTemplateColumns = `64px repeat(${columns.length}, minmax(210px, 1fr))`;
+  const minimumTableWidth = 64 + columns.length * 210;
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -216,67 +348,91 @@ export function DataTable({
             Clipboard access was blocked
           </div>
         ) : null}
-        <div className="overflow-x-auto border-b border-slate-200 bg-slate-50/90">
-          <div className="grid min-w-max text-xs font-semibold text-slate-500" style={{ gridTemplateColumns }}>
-            <div className="px-4 py-3">#</div>
-            {columns.map((column) => {
-              const field = schema.find((item) => item.name === column);
-              return (
-                <div className="border-l border-slate-200 px-4 py-3" key={column}>
-                  <span className="text-slate-900">{column}</span>
-                  <span className="ml-2 rounded-md bg-indigo-50 px-1.5 py-0.5 font-mono text-[10px] font-normal text-indigo-600">
-                    {field?.type ?? "unknown"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div ref={viewportRef} className="h-[540px] overflow-auto">
-          <div className="relative min-w-max" style={{ height: rowVirtualizer.getTotalSize() }}>
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index];
-              if (!row) return null;
-              const displayIndex = rowOffset + virtualRow.index + 1;
-              return (
-                <div
-                  className="absolute top-0 left-0 grid w-full items-center border-b border-slate-100 bg-white text-sm transition-colors hover:bg-indigo-50/35"
-                  key={virtualRow.key}
-                  style={{
-                    gridTemplateColumns,
-                    height: virtualRow.size,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <div className="flex items-center justify-between px-3 font-mono text-xs text-slate-400">
-                    {displayIndex}
-                    <button
-                      className="rounded-md p-1.5 transition hover:bg-white hover:text-indigo-600 hover:shadow-sm"
-                      type="button"
-                      onClick={() => void copyRow(virtualRow.index)}
-                      aria-label={`Copy row ${displayIndex} as JSON`}
-                    >
-                      {copied === virtualRow.index ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
-                    </button>
-                  </div>
-                  {columns.map((column) => (
-                    <div className="min-w-0 overflow-hidden border-l border-slate-100 px-4 py-3" key={column}>
-                      <Cell
-                        value={row[column]}
-                        namespace={namespace}
-                        dataset={dataset}
-                        revision={revision}
-                        inspect={() => setInspected({ column, value: row[column] })}
-                      />
+        <div className="overflow-x-auto">
+          <div className="w-full" style={{ minWidth: minimumTableWidth }}>
+            <div
+              className="overflow-y-auto border-b border-slate-200 bg-slate-50/90"
+              style={{ scrollbarGutter: "stable" }}
+            >
+              <div
+                className="grid w-full text-xs font-semibold text-slate-500"
+                style={{ gridTemplateColumns }}
+              >
+                <div className="px-4 py-3">#</div>
+                {columns.map((column) => {
+                  const field = schema.find((item) => item.name === column);
+                  return (
+                    <div className="border-l border-slate-200 px-4 py-3" key={column}>
+                      <span className="text-slate-900">{column}</span>
+                      <span className="ml-2 rounded-md bg-indigo-50 px-1.5 py-0.5 font-mono text-[10px] font-normal text-indigo-600">
+                        {field?.type ?? "unknown"}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            </div>
+            <div
+              ref={viewportRef}
+              className="h-[540px] overflow-x-hidden overflow-y-auto"
+              style={{ scrollbarGutter: "stable" }}
+            >
+              <div
+                className="relative w-full"
+                style={{ height: rowVirtualizer.getTotalSize() }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  if (!row) return null;
+                  const displayIndex =
+                    (rowIndices?.[virtualRow.index] ?? rowOffset + virtualRow.index) + 1;
+                  return (
+                    <div
+                      className="absolute top-0 left-0 grid w-full items-center border-b border-slate-100 bg-white text-sm transition-colors hover:bg-indigo-50/35"
+                      key={virtualRow.key}
+                      style={{
+                        gridTemplateColumns,
+                        height: virtualRow.size,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between px-3 font-mono text-xs text-slate-400">
+                        {displayIndex}
+                        <button
+                          className="rounded-md p-1.5 transition hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                          type="button"
+                          onClick={() => void copyRow(virtualRow.index)}
+                          aria-label={`Copy row ${displayIndex} as JSON`}
+                        >
+                          {copied === virtualRow.index ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                        </button>
+                      </div>
+                      {columns.map((column) => (
+                        <div className="min-w-0 overflow-hidden border-l border-slate-100 px-4 py-3" key={column}>
+                          <Cell
+                            value={row[column]}
+                            namespace={namespace}
+                            dataset={dataset}
+                            revision={revision}
+                            config={config}
+                            split={split}
+                            inspect={() => setInspected({ column, value: row[column] })}
+                            previewImage={setPreviewedImage}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>
       {inspected ? <CellInspector cell={inspected} close={() => setInspected(null)} /> : null}
+      {previewedImage ? (
+        <ImageLightbox image={previewedImage} close={() => setPreviewedImage(null)} />
+      ) : null}
     </>
   );
 }

@@ -3,11 +3,14 @@ import json
 import mimetypes
 import shutil
 from collections.abc import Iterator, Sequence
+from contextlib import ExitStack
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 from fastapi import UploadFile
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -24,7 +27,9 @@ from .domain.viewer import (
     ViewerPage,
     imagefolder_metadata_path,
     imagefolder_page,
+    parquet_image_cell,
     parse_viewer_filter,
+    query_parquet_page,
     query_tabular_page,
 )
 from .errors import ConflictError, NotFoundError, ValidationError
@@ -167,6 +172,7 @@ class DatasetService:
         self.storage.delete_objects(object_keys)
         self.storage.delete_prefix(f"datasets/source/{namespace}/{slug}/")
         self.storage.delete_prefix(f"datasets/derived/{namespace}/{slug}/")
+        self.storage.delete_prefix(f"datasets/derived/viewer-thumbnails/{repository.id}/")
         config_ids = select(DatasetConfig.id).where(DatasetConfig.revision_id.in_(revision_ids))
         self.db.execute(delete(DatasetSplit).where(DatasetSplit.config_id.in_(config_ids)))
         self.db.execute(delete(DatasetConfig).where(DatasetConfig.revision_id.in_(revision_ids)))
@@ -307,6 +313,37 @@ class DatasetService:
         if missing:
             raise NotFoundError(f"Viewer source file {missing[0]}")
 
+        all_parquet = required_paths and all(
+            Path(path).suffix.lower() == ".parquet" for path in required_paths
+        )
+        if all_parquet:
+            with ExitStack() as stack:
+                sources = [
+                    (
+                        path,
+                        stack.enter_context(
+                            self.storage.open_object(records_by_path[path].storage_object_key)
+                        ),
+                    )
+                    for path in required_paths
+                ]
+                page = query_parquet_page(
+                    sources,
+                    filter_,
+                    offset,
+                    limit,
+                )
+            if metadata_path:
+                return imagefolder_page(
+                    repository_paths,
+                    metadata_path,
+                    page,
+                    filter_,
+                    offset,
+                    limit,
+                )
+            return page
+
         self.settings.staging_root.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(prefix="viewer-", dir=self.settings.staging_root) as temp_name:
             temp_root = Path(temp_name)
@@ -338,6 +375,106 @@ class DatasetService:
                     limit,
                 )
             return page
+
+    def viewer_image(
+        self,
+        revision: DatasetRevision,
+        split: DatasetSplit,
+        *,
+        row_index: int,
+        column: str,
+        thumbnail: bool,
+    ) -> tuple[bytes, str, str | None]:
+        columns = {
+            str(field["name"])
+            for field in split.schema_json
+            if isinstance(field, dict) and "name" in field
+        }
+        if column not in columns:
+            raise ValidationError("invalid_image_column", f"Unknown image column: {column}")
+        paths = list(split.data_files)
+        if not paths or any(Path(path).suffix.lower() != ".parquet" for path in paths):
+            raise ValidationError(
+                "unsupported_image_source",
+                "Embedded image previews require Parquet source files.",
+            )
+
+        column_key = hashlib.sha256(column.encode()).hexdigest()[:16]
+        cache_key = (
+            f"datasets/derived/viewer-thumbnails/{revision.repository_id}/"
+            f"{revision.revision_id}/{split.id}/{row_index}/{column_key}.webp"
+        )
+        if thumbnail and self.storage.has_object(cache_key):
+            return b"".join(self.storage.iter_object(cache_key)), "image/webp", None
+
+        records = self.db.scalars(
+            select(RepositoryFile).where(
+                RepositoryFile.revision_id == revision.id,
+                RepositoryFile.path.in_(paths),
+            )
+        ).all()
+        records_by_path = {record.path: record for record in records}
+        missing = [path for path in paths if path not in records_by_path]
+        if missing:
+            raise NotFoundError(f"Viewer source file {missing[0]}")
+
+        with ExitStack() as stack:
+            sources = [
+                (
+                    path,
+                    stack.enter_context(
+                        self.storage.open_object(records_by_path[path].storage_object_key)
+                    ),
+                )
+                for path in paths
+            ]
+            try:
+                content, filename = parquet_image_cell(
+                    sources,
+                    row_index,
+                    column,
+                )
+            except IndexError as exc:
+                raise NotFoundError(f"Viewer row {row_index}") from exc
+        if len(content) > self.settings.viewer_image_max_bytes:
+            raise ValidationError(
+                "image_too_large",
+                "This image is too large to preview safely.",
+            )
+
+        try:
+            with Image.open(BytesIO(content)) as image:
+                if image.width * image.height > self.settings.viewer_image_max_pixels:
+                    raise ValidationError(
+                        "image_too_large",
+                        "This image has too many pixels to preview safely.",
+                    )
+                media_type = Image.MIME.get(image.format or "", "application/octet-stream")
+                if not thumbnail:
+                    return content, media_type, filename
+                image.seek(0)
+                image.thumbnail(
+                    (
+                        self.settings.viewer_thumbnail_size,
+                        self.settings.viewer_thumbnail_size,
+                    )
+                )
+                rendered: Image.Image = image
+                if image.mode not in {"RGB", "RGBA"}:
+                    rendered = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                output = BytesIO()
+                rendered.save(output, format="WEBP", quality=82, method=4)
+                if rendered is not image:
+                    rendered.close()
+                thumbnail_bytes = output.getvalue()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise ValidationError(
+                "invalid_image_cell",
+                "The image cell could not be decoded.",
+            ) from exc
+
+        self.storage.put_bytes(cache_key, thumbnail_bytes, "image/webp")
+        return thumbnail_bytes, "image/webp", filename
 
     def revision_archive(
         self,

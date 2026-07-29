@@ -107,6 +107,7 @@ export interface ViewerResponse {
   total_rows: number | null;
   available_rows: number;
   rows: Record<string, unknown>[];
+  row_indices: number[];
   schema: FieldSchema[];
   capabilities: Record<string, boolean>;
 }

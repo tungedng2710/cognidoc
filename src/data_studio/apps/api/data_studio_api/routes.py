@@ -134,9 +134,7 @@ def list_datasets(
             if owner_user is not None
             else []
         )
-    visible = [
-        item for item in repositories if can_read_repository(item, principal)
-    ]
+    visible = [item for item in repositories if can_read_repository(item, principal)]
     return {"items": [_repository_payload(db, item, principal) for item in visible]}
 
 
@@ -436,6 +434,7 @@ def viewer(
         total_rows=page.total_rows,
         available_rows=page.available_rows,
         rows=rows,
+        row_indices=page.row_indices,
         schema_=split.schema_json,
         capabilities={
             "projection": True,
@@ -443,6 +442,48 @@ def viewer(
             "global_sort": False,
             "text_search": False,
             "preview_is_bounded": False,
+        },
+    )
+
+
+@router.get(
+    "/datasets/{namespace}/{dataset}/viewer-media/{config_name}/{split_name}/{row_index}/{column}"
+)
+def viewer_media(
+    namespace: str,
+    dataset: str,
+    config_name: str,
+    split_name: str,
+    row_index: int,
+    column: str,
+    db: Database,
+    datasets: Service,
+    principal: OptionalPrincipal,
+    revision: str = "main",
+    thumbnail: bool = True,
+) -> Response:
+    _repository_for_read(db, namespace, dataset, principal)
+    resolved, split = _resolve_split(
+        db,
+        namespace,
+        dataset,
+        revision,
+        config_name,
+        split_name,
+    )
+    content, media_type, _ = datasets.viewer_image(
+        resolved,
+        split,
+        row_index=row_index,
+        column=column,
+        thumbnail=thumbnail,
+    )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

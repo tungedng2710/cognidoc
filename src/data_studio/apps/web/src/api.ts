@@ -208,6 +208,32 @@ export const api = {
     );
   },
 
+  viewerMediaUrl(
+    namespace: string,
+    dataset: string,
+    config: string,
+    split: string,
+    row: number,
+    column: string,
+    revision: string,
+    thumbnail = true,
+  ): string {
+    const params = new URLSearchParams({
+      revision,
+      thumbnail: String(thumbnail),
+    });
+    const path = [
+      namespace,
+      dataset,
+      "viewer-media",
+      config,
+      split,
+      String(row),
+      column,
+    ].map(encodeURIComponent).join("/");
+    return `${API_ROOT}/datasets/${path}?${params.toString()}`;
+  },
+
   statistics(
     namespace: string,
     dataset: string,

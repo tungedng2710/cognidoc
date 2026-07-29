@@ -1,8 +1,9 @@
+import io
 import shutil
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import Any, BinaryIO, Protocol
 
 import boto3
 from botocore.client import Config
@@ -17,6 +18,10 @@ class ObjectStorage(Protocol):
     def put_bytes(self, key: str, content: bytes, content_type: str) -> None: ...
 
     def iter_object(self, key: str, chunk_size: int = 1024 * 1024) -> Iterator[bytes]: ...
+
+    def open_object(self, key: str) -> BinaryIO: ...
+
+    def has_object(self, key: str) -> bool: ...
 
     def delete_prefix(self, prefix: str) -> None: ...
 
@@ -51,6 +56,12 @@ class LocalObjectStorage:
         with self._resolve(key).open("rb") as handle:
             while chunk := handle.read(chunk_size):
                 yield chunk
+
+    def open_object(self, key: str) -> BinaryIO:
+        return self._resolve(key).open("rb")
+
+    def has_object(self, key: str) -> bool:
+        return self._resolve(key).is_file()
 
     def delete_prefix(self, prefix: str) -> None:
         target = self._resolve(prefix.rstrip("/"))
@@ -108,6 +119,22 @@ class S3ObjectStorage:
         while chunk := body.read(chunk_size):
             yield chunk
 
+    def open_object(self, key: str) -> BinaryIO:
+        return io.BufferedReader(
+            S3RangeReader(self.client, self.bucket, key),
+            buffer_size=1024 * 1024,
+        )
+
+    def has_object(self, key: str) -> bool:
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            if error_code in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            raise
+
     def delete_prefix(self, prefix: str) -> None:
         while True:
             response = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
@@ -130,6 +157,88 @@ class S3ObjectStorage:
                     Bucket=self.bucket,
                     Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
                 )
+
+
+class S3RangeReader(io.RawIOBase):
+    def __init__(
+        self,
+        client: Any,
+        bucket: str,
+        key: str,
+        block_size: int = 4 * 1024 * 1024,
+    ) -> None:
+        super().__init__()
+        self.client = client
+        self.bucket = bucket
+        self.key = key
+        self.block_size = block_size
+        self.size = int(client.head_object(Bucket=bucket, Key=key)["ContentLength"])
+        self.position = 0
+        self.cache_start = -1
+        self.cache = b""
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self.position
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        if whence == io.SEEK_SET:
+            position = offset
+        elif whence == io.SEEK_CUR:
+            position = self.position + offset
+        elif whence == io.SEEK_END:
+            position = self.size + offset
+        else:
+            raise ValueError(f"Unsupported seek mode: {whence}")
+        if position < 0:
+            raise ValueError("Cannot seek before the beginning of an object.")
+        self.position = min(position, self.size)
+        return self.position
+
+    def _load_block(self) -> None:
+        if self.position >= self.size:
+            self.cache_start = self.size
+            self.cache = b""
+            return
+        start = (self.position // self.block_size) * self.block_size
+        end = min(self.size - 1, start + self.block_size - 1)
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Range=f"bytes={start}-{end}",
+        )
+        body = response["Body"]
+        try:
+            self.cache = body.read()
+        finally:
+            close = getattr(body, "close", None)
+            if close is not None:
+                close()
+        self.cache_start = start
+
+    def readinto(self, buffer: Any) -> int:
+        view = memoryview(buffer).cast("B")
+        if not view or self.position >= self.size:
+            return 0
+        written = 0
+        while written < len(view) and self.position < self.size:
+            cache_end = self.cache_start + len(self.cache)
+            if not (self.cache_start <= self.position < cache_end):
+                self._load_block()
+                cache_end = self.cache_start + len(self.cache)
+                if not self.cache:
+                    break
+            source_start = self.position - self.cache_start
+            count = min(len(view) - written, cache_end - self.position)
+            view[written : written + count] = self.cache[source_start : source_start + count]
+            written += count
+            self.position += count
+        return written
 
 
 def create_storage(settings: Settings) -> ObjectStorage:

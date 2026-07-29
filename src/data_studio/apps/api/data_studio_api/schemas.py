@@ -245,6 +245,7 @@ class ViewerResponse(BaseModel):
     total_rows: int | None
     available_rows: int
     rows: list[dict[str, Any]]
+    row_indices: list[int]
     schema_: list[dict[str, Any]] = Field(alias="schema", serialization_alias="schema")
     capabilities: dict[str, bool]
 
