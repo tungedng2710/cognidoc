@@ -348,6 +348,8 @@ describe("App", () => {
       slug: currentSlug,
       visibility: "private",
       description: "",
+      data_stage: null,
+      tags: [],
       default_branch: "main",
       created_at: "2026-07-22T08:00:00Z",
       updated_at: "2026-07-22T08:00:00Z",
@@ -402,6 +404,12 @@ describe("App", () => {
     fireEvent.change(await screen.findByRole("textbox", { name: /Dataset name/ }), {
       target: { value: "renamed-dataset" },
     });
+    fireEvent.click(screen.getByRole("combobox", { name: "Dataset data stage" }));
+    fireEvent.click(screen.getByRole("option", { name: /Training ready/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New dataset tag" }), {
+      target: { value: "License Plates" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add tag" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await vi.waitFor(() => {
@@ -413,6 +421,8 @@ describe("App", () => {
             slug: "renamed-dataset",
             description: "",
             visibility: "private",
+            data_stage: "training_ready",
+            tags: ["license-plates"],
           }),
         }),
       );

@@ -254,11 +254,17 @@ ds_json \
   --request PATCH \
   --data '{
     "description": "Updated description",
-    "visibility": "internal"
+    "visibility": "internal",
+    "data_stage": "training_ready",
+    "tags": ["license-plates", "vietnam"]
   }' \
   "$API/datasets/$DATASET" \
   | jq
 ```
+
+`data_stage` can be `raw`, `raw_validated`, `prelabeled`, `human_labeled`,
+`verified`, `training_ready`, `rejected`, or `null`. Optional tags are
+lowercased, spaces become hyphens, and duplicates are removed.
 
 Renaming changes the URL. Update `DATASET` after changing the slug:
 

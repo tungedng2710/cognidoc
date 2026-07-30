@@ -22,6 +22,7 @@ compatibility claims are intentionally narrower than the complete MVP; see [Curr
 - Content-addressed RustFS objects, deterministic manifests, and idempotent immutable revisions
 - Isolated internal Git repositories with DVC pointers and durable DVC cache publication
 - Byte-identical streaming downloads through the authorized API boundary
+- Optional dataset lifecycle stages and normalized custom tags
 - URL-addressable revision/config/split views and a virtualized React data table
 - PostgreSQL migrations, Redis/Celery worker wiring, and local Docker Compose deployment
 - Local SQLite/filesystem adapters for fast development and tests

@@ -1,6 +1,7 @@
 import type {
   ApiToken,
   ApiTokenCreated,
+  DataStage,
   Dataset,
   DatasetConfig,
   FilePage,
@@ -129,6 +130,8 @@ export const api = {
     slug: string;
     visibility: Visibility;
     description: string;
+    data_stage?: DataStage | null;
+    tags?: string[];
   }): Promise<Dataset> {
     return request("/datasets", { method: "POST", body: JSON.stringify(body) });
   },
@@ -136,7 +139,13 @@ export const api = {
   updateDataset(
     namespace: string,
     dataset: string,
-    body: { slug?: string; visibility?: Visibility; description?: string },
+    body: {
+      slug?: string;
+      visibility?: Visibility;
+      description?: string;
+      data_stage?: DataStage | null;
+      tags?: string[];
+    },
   ): Promise<Dataset> {
     return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
       method: "PATCH",

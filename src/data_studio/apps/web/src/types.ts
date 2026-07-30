@@ -1,4 +1,12 @@
 export type Visibility = "private" | "internal" | "public";
+export type DataStage =
+  | "raw"
+  | "raw_validated"
+  | "prelabeled"
+  | "human_labeled"
+  | "verified"
+  | "training_ready"
+  | "rejected";
 export type RevisionStatus = "uploading" | "validating" | "indexing" | "ready" | "failed";
 
 export interface RevisionSummary {
@@ -21,6 +29,8 @@ export interface Dataset {
   slug: string;
   visibility: Visibility;
   description: string;
+  data_stage: DataStage | null;
+  tags: string[];
   default_branch: string;
   created_at: string;
   updated_at: string;

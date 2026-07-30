@@ -196,7 +196,11 @@ class DatasetService:
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
-        changes = data.model_dump(exclude_unset=True, exclude_none=True)
+        changes = {
+            key: value
+            for key, value in data.model_dump(exclude_unset=True).items()
+            if value is not None or key == "data_stage"
+        }
         new_slug = changes.get("slug")
         if new_slug and new_slug != repository.slug:
             existing = self.db.scalar(_repository_query(namespace, new_slug))
@@ -914,6 +918,8 @@ def repository_payload(
         "slug": repository.slug,
         "visibility": repository.visibility,
         "description": repository.description,
+        "data_stage": repository.data_stage,
+        "tags": repository.tags,
         "default_branch": repository.default_branch,
         "created_at": repository.created_at,
         "updated_at": repository.updated_at,

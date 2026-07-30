@@ -7,6 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .models import RevisionStatus, UploadStatus, Visibility
 
 ApiTokenScope = Literal["read", "write"]
+DataStage = Literal[
+    "raw",
+    "raw_validated",
+    "prelabeled",
+    "human_labeled",
+    "verified",
+    "training_ready",
+    "rejected",
+]
 
 
 def default_api_token_scopes() -> list[ApiTokenScope]:
@@ -16,6 +25,22 @@ def default_api_token_scopes() -> list[ApiTokenScope]:
 def normalize_dataset_slug(value: str) -> str:
     normalized = re.sub(r"\s+", "-", value.strip().lower())
     return re.sub(r"-{2,}", "-", normalized)
+
+
+def normalize_dataset_tags(tags: list[str]) -> list[str]:
+    if len(tags) > 20:
+        raise ValueError("a dataset can have at most 20 optional tags")
+
+    normalized: list[str] = []
+    for value in tags:
+        tag = normalize_dataset_slug(value)
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,31}", tag):
+            raise ValueError(
+                "tags must be 1-32 characters using letters, numbers, dots, underscores, or hyphens"
+            )
+        if tag not in normalized:
+            normalized.append(tag)
+    return normalized
 
 
 class OrmModel(BaseModel):
@@ -36,17 +61,31 @@ class DatasetCreate(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,95}$")
     visibility: Visibility = Visibility.private
     description: str = Field(default="", max_length=2_000)
+    data_stage: DataStage | None = None
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("slug", mode="before")
     @classmethod
     def normalize_slug(cls, value: Any) -> Any:
         return normalize_dataset_slug(value) if isinstance(value, str) else value
 
+    @field_validator("tags")
+    @classmethod
+    def normalized_tags(cls, tags: list[str]) -> list[str]:
+        return normalize_dataset_tags(tags)
+
 
 class DatasetPatch(BaseModel):
     slug: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,95}$")
     visibility: Visibility | None = None
     description: str | None = Field(default=None, max_length=2_000)
+    data_stage: DataStage | None = None
+    tags: list[str] | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def normalized_tags(cls, tags: list[str] | None) -> list[str] | None:
+        return normalize_dataset_tags(tags) if tags is not None else None
 
 
 class FileRead(OrmModel):
@@ -109,6 +148,8 @@ class DatasetRead(OrmModel):
     slug: str
     visibility: Visibility
     description: str
+    data_stage: DataStage | None
+    tags: list[str]
     default_branch: str
     created_at: datetime
     updated_at: datetime

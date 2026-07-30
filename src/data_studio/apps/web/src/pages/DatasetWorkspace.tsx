@@ -42,7 +42,13 @@ import { DataTable } from "../components/DataTable";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { StudioSelect } from "../components/StudioSelect";
 import { UploadDialog } from "../components/UploadDialog";
+import {
+  dataStageOptions,
+  isValidDatasetTag,
+  normalizeDatasetTag,
+} from "../dataset-tags";
 import type {
+  DataStage,
   Dataset,
   DatasetConfig,
   FilePage,
@@ -526,6 +532,9 @@ function SettingsTab({
   const [slug, setSlug] = useState(dataset.slug);
   const [description, setDescription] = useState(dataset.description);
   const [visibility, setVisibility] = useState(dataset.visibility);
+  const [dataStage, setDataStage] = useState<DataStage | null>(dataset.data_stage);
+  const [tags, setTags] = useState(dataset.tags);
+  const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -540,6 +549,8 @@ function SettingsTab({
         slug,
         description,
         visibility,
+        data_stage: dataStage,
+        tags,
       });
       onUpdated(updated);
       if (updated.slug !== dataset.slug) {
@@ -550,6 +561,28 @@ function SettingsTab({
     } finally {
       setSaving(false);
     }
+  };
+
+  const addTag = () => {
+    const normalized = normalizeDatasetTag(tagInput);
+    if (!normalized) return;
+    if (!isValidDatasetTag(normalized)) {
+      setError(
+        "Tags must be 1-32 characters using letters, numbers, dots, underscores, or hyphens.",
+      );
+      return;
+    }
+    if (tags.includes(normalized)) {
+      setTagInput("");
+      return;
+    }
+    if (tags.length >= 20) {
+      setError("A dataset can have at most 20 optional tags.");
+      return;
+    }
+    setTags((current) => [...current, normalized]);
+    setTagInput("");
+    setError("");
   };
 
   const remove = async () => {
@@ -603,6 +636,67 @@ function SettingsTab({
                 onChange={(next) => setVisibility(next as Dataset["visibility"])}
               />
             </div>
+            <div className="field-label">
+              <span>Data stage</span>
+              <StudioSelect
+                ariaLabel="Dataset data stage"
+                className="mt-1"
+                value={dataStage ?? ""}
+                options={dataStageOptions}
+                onChange={(next) => setDataStage((next || null) as DataStage | null)}
+              />
+              <span className="mt-1 block font-normal text-slate-400">
+                Select one lifecycle stage, or leave it as None.
+              </span>
+            </div>
+            <div className="field-label">
+              <span>Optional tags</span>
+              {tags.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {tags.map((tag) => (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-100"
+                      key={tag}
+                    >
+                      {tag}
+                      <button
+                        aria-label={`Remove ${tag} tag`}
+                        className="rounded p-0.5 text-indigo-400 hover:bg-indigo-100 hover:text-indigo-700"
+                        onClick={() => setTags((current) => current.filter((item) => item !== tag))}
+                        type="button"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs font-normal text-slate-400">No optional tags.</p>
+              )}
+              <div className="mt-2 flex gap-2">
+                <input
+                  aria-label="New dataset tag"
+                  className="field-input mt-0"
+                  maxLength={32}
+                  placeholder="for example: synthetic"
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    addTag();
+                  }}
+                />
+                <button
+                  className="button-secondary shrink-0"
+                  disabled={!tagInput.trim()}
+                  onClick={addTag}
+                  type="button"
+                >
+                  Add tag
+                </button>
+              </div>
+            </div>
             {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
             <button className="button-primary" type="submit" disabled={saving}><Save className="size-4" /> {saving ? "Saving…" : "Save changes"}</button>
           </form>
@@ -611,6 +705,18 @@ function SettingsTab({
             <dl className="space-y-4 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">Owner</dt><dd className="font-semibold">{dataset.owner ?? "Legacy repository"}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Visibility</dt><dd className="font-semibold capitalize">{dataset.visibility}</dd></div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Data stage</dt>
+                <dd className="font-semibold">
+                  {dataset.data_stage?.replaceAll("_", " ") ?? "None"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Optional tags</dt>
+                <dd className="text-right font-semibold">
+                  {dataset.tags.length ? dataset.tags.join(", ") : "None"}
+                </dd>
+              </div>
               <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>
             </dl>
             <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">

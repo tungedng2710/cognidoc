@@ -250,7 +250,7 @@ Mô hình logic tối thiểu PHẢI có:
 | --- | --- |
 | User / principal | ID ổn định, thuộc tính danh tính, tham chiếu xác thực, trạng thái |
 | Namespace | ID ổn định, slug, loại owner, chính sách truy cập |
-| Dataset repository | ID ổn định, namespace, slug, owner, visibility, default branch, timestamp |
+| Dataset repository | ID ổn định, namespace, slug, owner, visibility, giai đoạn dữ liệu, tag tùy chọn, default branch, timestamp |
 | Dataset revision | Repository, revision cha, revision ID, Git commit, DVC revision, checksum/key manifest, trạng thái, phiên bản parser/index, creator, timestamp, lỗi |
 | Repository file | Revision, đường dẫn chuẩn hóa, số byte, SHA-256, media type, source object key, khả năng preview |
 | Dataset config | Revision, tên, builder, builder parameter đã chuẩn hóa |

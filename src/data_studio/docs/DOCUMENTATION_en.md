@@ -252,7 +252,7 @@ At minimum, the logical model SHALL contain:
 | --- | --- |
 | User / principal | Stable ID, identity attributes, authentication reference, status |
 | Namespace | Stable ID, slug, owner type, access policy |
-| Dataset repository | Stable ID, namespace, slug, owner, visibility, default branch, timestamps |
+| Dataset repository | Stable ID, namespace, slug, owner, visibility, lifecycle stage, optional tags, default branch, timestamps |
 | Dataset revision | Repository, parent, revision ID, Git commit, DVC revision, manifest checksum/key, state, parser/index versions, creator, timestamps, error |
 | Repository file | Revision, normalized path, byte size, SHA-256, media type, source object key, previewability |
 | Dataset config | Revision, name, builder, normalized builder parameters |

@@ -270,6 +270,9 @@ unzip -l sentiment-demo.zip`}</CodeBlock>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-600">
                 <li>Public datasets can be read with ordinary <InlineCode>curl</InlineCode>; no token is needed.</li>
                 <li>Use a read-only token for scripts that never upload or change data.</li>
+                <li>
+                  Dataset settings support a lifecycle stage and optional custom tags.
+                </li>
                 <li>Keep tokens out of shell history, source code, screenshots, and Git.</li>
                 <li>API errors include a readable <InlineCode>detail</InlineCode> and stable <InlineCode>code</InlineCode>.</li>
               </ul>

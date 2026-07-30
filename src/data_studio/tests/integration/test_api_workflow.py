@@ -327,7 +327,38 @@ def test_dataset_name_is_normalized_when_created(client: TestClient) -> None:
 
     assert response.status_code == 201, response.text
     assert response.json()["slug"] == "license-plate"
+    assert response.json()["data_stage"] is None
+    assert response.json()["tags"] == []
     assert client.get("/api/v1/datasets/owner/license-plate").status_code == 200
+
+
+def test_dataset_stage_and_optional_tags_can_be_updated(client: TestClient) -> None:
+    _register(client, "owner")
+    created = client.post(
+        "/api/v1/datasets",
+        json={"namespace": "owner", "slug": "plate-data"},
+    )
+    assert created.status_code == 201, created.text
+
+    updated = client.patch(
+        "/api/v1/datasets/owner/plate-data",
+        json={
+            "data_stage": "raw_validated",
+            "tags": ["License Plates", "Vietnam", "license-plates"],
+        },
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data_stage"] == "raw_validated"
+    assert updated.json()["tags"] == ["license-plates", "vietnam"]
+
+    cleared = client.patch(
+        "/api/v1/datasets/owner/plate-data",
+        json={"data_stage": None, "tags": []},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["data_stage"] is None
+    assert cleared.json()["tags"] == []
 
 
 def test_public_read_and_owner_only_mutations(client: TestClient) -> None:

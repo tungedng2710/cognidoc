@@ -96,6 +96,8 @@ class DatasetRepository(Base):
     slug: Mapped[str] = mapped_column(String(96), index=True)
     visibility: Mapped[Visibility] = mapped_column(Enum(Visibility), default=Visibility.private)
     description: Mapped[str] = mapped_column(Text, default="")
+    data_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     default_branch: Mapped[str] = mapped_column(String(64), default="main")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
