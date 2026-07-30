@@ -219,6 +219,8 @@ describe("App", () => {
                 slug: "my-data",
                 visibility: "private",
                 description: "Owned repository",
+                data_stage: "training_ready",
+                tags: ["license-plates", "vietnam"],
                 default_branch: "main",
                 created_at: "2026-07-22T08:00:00Z",
                 updated_at: "2026-07-22T08:00:00Z",
@@ -255,6 +257,9 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Owner's repositories" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "my-data" })).toBeInTheDocument();
+    expect(screen.getByText("Training Ready")).toBeInTheDocument();
+    expect(screen.getByText("license-plates")).toBeInTheDocument();
+    expect(screen.getByText("vietnam")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "public-data" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/datasets?owner=owner",
@@ -307,6 +312,8 @@ describe("App", () => {
             slug: "demo",
             visibility: "private",
             description: longDescription,
+            data_stage: "raw_validated",
+            tags: ["ocr", "images"],
             default_branch: "main",
             created_at: createdAt,
             updated_at: createdAt,
@@ -328,6 +335,9 @@ describe("App", () => {
     expect(await screen.findByText("Repository files")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByText("Raw Validated")).toBeInTheDocument();
+    expect(screen.getByText("ocr")).toBeInTheDocument();
+    expect(screen.getByText("images")).toBeInTheDocument();
     expect(screen.getByTitle(longDescription)).toHaveClass("min-w-0", "truncate");
     expect(screen.getByRole("link", { name: "Download dataset" })).toHaveClass("shrink-0");
     expect(screen.getByRole("link", { name: "Download dataset" })).toHaveAttribute(

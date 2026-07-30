@@ -39,6 +39,7 @@ import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
 import { DataTable } from "../components/DataTable";
+import { DatasetTags } from "../components/DatasetTags";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { StudioSelect } from "../components/StudioSelect";
 import { UploadDialog } from "../components/UploadDialog";
@@ -858,6 +859,12 @@ export function DatasetWorkspace() {
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium text-slate-500">{namespace} /</p>
                     <h1 className="truncate text-2xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
+                    <DatasetTags
+                      className="mt-1.5"
+                      dataStage={repository.data_stage}
+                      maxTags={4}
+                      tags={repository.tags}
+                    />
                   </div>
                 </div>
                 <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 pl-12 text-xs text-slate-500">

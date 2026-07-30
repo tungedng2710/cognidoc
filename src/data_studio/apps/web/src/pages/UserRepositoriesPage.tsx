@@ -7,6 +7,7 @@ import { AccountControls } from "../components/Auth";
 import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
+import { DatasetTags } from "../components/DatasetTags";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import type { Dataset } from "../types";
 
@@ -37,7 +38,13 @@ export function UserRepositoriesPage() {
   const filtered = datasets?.filter(
     (dataset) =>
       dataset.owner === username
-      && `${dataset.namespace}/${dataset.slug} ${dataset.description}`
+      && [
+        `${dataset.namespace}/${dataset.slug}`,
+        dataset.description,
+        dataset.data_stage ?? "",
+        ...dataset.tags,
+      ]
+        .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
@@ -95,7 +102,7 @@ export function UserRepositoriesPage() {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {filtered.map((dataset) => (
                 <Link
-                  className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs shadow-slate-900/5 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md"
+                  className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs shadow-slate-900/5 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md"
                   to={`/datasets/${dataset.namespace}/${dataset.slug}`}
                   key={dataset.id}
                 >
@@ -114,7 +121,12 @@ export function UserRepositoriesPage() {
                   <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-slate-500">
                     {dataset.description || "No description yet."}
                   </p>
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  <DatasetTags
+                    className="mt-3"
+                    dataStage={dataset.data_stage}
+                    tags={dataset.tags}
+                  />
+                  <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                     <span>
                       {dataset.latest_revision
                         ? `rev ${dataset.latest_revision.revision_id}`
