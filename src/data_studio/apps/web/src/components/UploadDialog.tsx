@@ -1,4 +1,11 @@
-import { CheckCircle2, FolderUp, LoaderCircle, UploadCloud, X } from "lucide-react";
+import {
+  CheckCircle2,
+  FileUp,
+  FolderUp,
+  LoaderCircle,
+  UploadCloud,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api";
@@ -33,9 +40,10 @@ export function UploadDialog({
   onClose,
   onComplete,
 }: UploadDialogProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [selectionKind, setSelectionKind] = useState<"files" | "folder" | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState("");
   const totalBytes = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files]);
@@ -43,10 +51,11 @@ export function UploadDialog({
   useEffect(() => {
     if (!open) return;
     setFiles([]);
+    setSelectionKind(null);
     setProgress(null);
     setError("");
-    inputRef.current?.setAttribute("webkitdirectory", "");
-    inputRef.current?.setAttribute("directory", "");
+    folderInputRef.current?.setAttribute("webkitdirectory", "");
+    folderInputRef.current?.setAttribute("directory", "");
   }, [open]);
 
   if (!open) return null;
@@ -63,7 +72,7 @@ export function UploadDialog({
     abortRef.current = controller;
     setError("");
     try {
-      const nextRevision = await api.uploadFolder(
+      const nextRevision = await api.uploadFiles(
         namespace,
         dataset,
         files,
@@ -101,11 +110,11 @@ export function UploadDialog({
           <div>
             <p className="eyebrow">New immutable revision</p>
             <h2 id="upload-title" className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
-              Upload a dataset folder
+              Upload dataset files
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Source paths, cards, data shards, and media are preserved. Large repositories upload in
-              safe batches with no dataset-size limit in the Studio.
+              Choose individual files or a complete repository folder. Folder paths are preserved,
+              while individual files are added at the repository root.
             </p>
           </div>
           <button className="icon-button" type="button" onClick={close} aria-label="Close upload">
@@ -113,28 +122,79 @@ export function UploadDialog({
           </button>
         </div>
 
-        <label className={`mt-5 flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed px-5 text-center transition ${progress ? "cursor-not-allowed border-slate-200 bg-slate-50" : "cursor-pointer border-indigo-300 bg-gradient-to-br from-indigo-50/80 to-cyan-50/70 hover:border-indigo-400 hover:from-indigo-50"}`}>
-          <input
-            ref={inputRef}
-            className="sr-only"
-            type="file"
-            multiple
-            disabled={Boolean(progress)}
-            onChange={(event) => {
-              setFiles(Array.from(event.target.files ?? []));
-              setError("");
-            }}
-          />
-          <span className="grid size-12 place-items-center rounded-2xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
-            {files.length ? <CheckCircle2 className="size-6" /> : <FolderUp className="size-6" />}
-          </span>
-          <span className="mt-4 font-semibold text-slate-900">
-            {files.length ? `${files.length.toLocaleString()} files selected` : "Choose repository folder"}
-          </span>
-          <span className="mt-1 text-xs text-slate-500">
-            {files.length ? formatBytes(totalBytes) : "Parquet, CSV, TSV, JSON, JSONL, TXT, and ImageFolder"}
-          </span>
-        </label>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label
+            className={`flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed px-5 text-center transition ${
+              progress
+                ? "cursor-not-allowed border-slate-200 bg-slate-50"
+                : "cursor-pointer border-indigo-300 bg-indigo-50/70 hover:border-indigo-400"
+            }`}
+          >
+            <input
+              aria-label="Choose files"
+              className="sr-only"
+              type="file"
+              multiple
+              disabled={Boolean(progress)}
+              onChange={(event) => {
+                setFiles(Array.from(event.target.files ?? []));
+                setSelectionKind("files");
+                setError("");
+              }}
+            />
+            <span className="grid size-11 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+              <FileUp className="size-5" />
+            </span>
+            <span className="mt-3 font-semibold text-slate-900">Choose files</span>
+            <span className="mt-1 text-xs leading-5 text-slate-500">
+              Select one or more files
+            </span>
+          </label>
+
+          <label
+            className={`flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed px-5 text-center transition ${
+              progress
+                ? "cursor-not-allowed border-slate-200 bg-slate-50"
+                : "cursor-pointer border-cyan-300 bg-cyan-50/70 hover:border-cyan-400"
+            }`}
+          >
+            <input
+              ref={folderInputRef}
+              aria-label="Choose folder"
+              className="sr-only"
+              type="file"
+              multiple
+              disabled={Boolean(progress)}
+              onChange={(event) => {
+                setFiles(Array.from(event.target.files ?? []));
+                setSelectionKind("folder");
+                setError("");
+              }}
+            />
+            <span className="grid size-11 place-items-center rounded-xl bg-white text-cyan-700 shadow-sm ring-1 ring-cyan-100">
+              <FolderUp className="size-5" />
+            </span>
+            <span className="mt-3 font-semibold text-slate-900">Choose folder</span>
+            <span className="mt-1 text-xs leading-5 text-slate-500">
+              Preserve its directory structure
+            </span>
+          </label>
+        </div>
+
+        {files.length ? (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />
+            <div className="min-w-0">
+              <p className="font-semibold text-emerald-950">
+                {files.length.toLocaleString()} files selected
+              </p>
+              <p className="text-xs text-emerald-700">
+                {formatBytes(totalBytes)}
+                {selectionKind === "files" ? " · repository root" : " · folder paths preserved"}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {progress ? (
           <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">

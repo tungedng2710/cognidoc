@@ -885,7 +885,7 @@ Before upload, the researcher SHOULD verify:
    Description: Table images, HTML, and deterministic logical-structure reasoning labels
    ```
 
-4. Open the repository and select **Upload revision**.
+4. Open the repository and select **Upload revision**, then choose individual files or a folder.
 5. Select the `table-html-reasoning-v2/` folder. The selected root SHALL contain `README.md`.
 6. Enter a descriptive commit message, for example:
 

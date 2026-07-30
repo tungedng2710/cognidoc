@@ -115,8 +115,8 @@ docker compose --env-file .env -f infrastructure/docker-compose.yml down
 1. Select **New dataset**, enter a namespace and dataset name, and choose visibility. Dataset names
    are lowercased automatically, and whitespace between words becomes `-`.
 2. Select **Upload revision** on the dataset page.
-3. Choose a local Hugging Face-compatible repository folder. The browser sends its relative paths;
-   the source folder is not rewritten.
+3. Choose one or more files, or select a compatible repository folder. Individual files are added
+   at the repository root; folder uploads preserve relative paths without rewriting the source.
 4. After validation, use **Dataset card**, **Data Studio**, **Files**, **Schema**, **Statistics**, and
    **Versions** to inspect the immutable revision.
 5. Select any repository file to download and verify the preserved source object.

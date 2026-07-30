@@ -12,6 +12,7 @@ import type {
   ViewerResponse,
   Visibility,
 } from "./types";
+import { repositoryPathForUpload } from "./upload-paths";
 
 const API_ROOT = import.meta.env.VITE_API_URL ?? "/api/v1";
 
@@ -278,7 +279,7 @@ export const api = {
     );
   },
 
-  async uploadFolder(
+  async uploadFiles(
     namespace: string,
     dataset: string,
     files: File[],
@@ -293,9 +294,20 @@ export const api = {
       uploadedBytes = 0,
     ) => onProgress({ phase, message, uploadedFiles, totalFiles: files.length, uploadedBytes, totalBytes });
     report("preparing", "Creating a secure upload session…");
+    const includesFolderPaths = files.some(
+      (file) => Boolean((file as File & { webkitRelativePath?: string }).webkitRelativePath),
+    );
     const upload = await request<{ id: string }>(
       `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/uploads`,
-      { method: "POST", body: JSON.stringify({ commit_message: "Upload dataset folder" }), signal },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commit_message: includesFolderPaths
+            ? "Upload dataset folder"
+            : "Upload dataset files",
+        }),
+        signal,
+      },
     );
 
     let uploadedFiles = 0;
@@ -319,11 +331,8 @@ export const api = {
       const form = new FormData();
       batchNumber += 1;
       for (const file of batch) {
-        const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-        const pathParts = relative?.split("/") ?? [];
-        const path = pathParts.length > 1 ? pathParts.slice(1).join("/") : file.name;
         form.append("files", file, file.name);
-        form.append("paths", path);
+        form.append("paths", repositoryPathForUpload(file));
       }
       report(
         "uploading",

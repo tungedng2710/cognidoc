@@ -884,7 +884,7 @@ Trước khi upload, researcher NÊN kiểm tra:
    Description: Table images, HTML, and deterministic logical-structure reasoning labels
    ```
 
-4. Mở repository và chọn **Upload revision**.
+4. Mở repository, chọn **Upload revision**, sau đó chọn từng file hoặc cả thư mục.
 5. Chọn thư mục `table-html-reasoning-v2/`. Thư mục gốc được chọn PHẢI chứa `README.md`.
 6. Nhập commit message có ý nghĩa, ví dụ:
 
