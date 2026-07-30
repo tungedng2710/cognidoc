@@ -532,8 +532,10 @@ function SettingsTab({
   const [slug, setSlug] = useState(dataset.slug);
   const [description, setDescription] = useState(dataset.description);
   const [visibility, setVisibility] = useState(dataset.visibility);
-  const [dataStage, setDataStage] = useState<DataStage | null>(dataset.data_stage);
-  const [tags, setTags] = useState(dataset.tags);
+  const [dataStage, setDataStage] = useState<DataStage | null>(
+    dataset.data_stage ?? null,
+  );
+  const [tags, setTags] = useState(dataset.tags ?? []);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -714,7 +716,7 @@ function SettingsTab({
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Optional tags</dt>
                 <dd className="text-right font-semibold">
-                  {dataset.tags.length ? dataset.tags.join(", ") : "None"}
+                  {dataset.tags?.length ? dataset.tags.join(", ") : "None"}
                 </dd>
               </div>
               <div className="flex justify-between"><dt className="text-slate-500">Default branch</dt><dd className="font-mono">{dataset.default_branch}</dd></div>

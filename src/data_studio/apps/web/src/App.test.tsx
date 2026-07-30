@@ -348,8 +348,6 @@ describe("App", () => {
       slug: currentSlug,
       visibility: "private",
       description: "",
-      data_stage: null,
-      tags: [],
       default_branch: "main",
       created_at: "2026-07-22T08:00:00Z",
       updated_at: "2026-07-22T08:00:00Z",
@@ -401,6 +399,7 @@ describe("App", () => {
       </MemoryRouter>,
     );
 
+    expect(await screen.findByText("No optional tags.")).toBeInTheDocument();
     fireEvent.change(await screen.findByRole("textbox", { name: /Dataset name/ }), {
       target: { value: "renamed-dataset" },
     });

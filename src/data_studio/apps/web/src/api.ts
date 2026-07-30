@@ -15,6 +15,17 @@ import type {
 
 const API_ROOT = import.meta.env.VITE_API_URL ?? "/api/v1";
 
+type DatasetResponse = Omit<Dataset, "data_stage" | "tags"> &
+  Partial<Pick<Dataset, "data_stage" | "tags">>;
+
+function normalizeDataset(dataset: DatasetResponse): Dataset {
+  return {
+    ...dataset,
+    data_stage: dataset.data_stage ?? null,
+    tags: dataset.tags ?? [],
+  };
+}
+
 export interface UploadProgress {
   phase: "preparing" | "uploading" | "publishing";
   message: string;
@@ -121,11 +132,11 @@ export const api = {
     const suffix = owner
       ? `?${new URLSearchParams({ owner }).toString()}`
       : "";
-    const response = await request<{ items: Dataset[] }>(`/datasets${suffix}`);
-    return response.items;
+    const response = await request<{ items: DatasetResponse[] }>(`/datasets${suffix}`);
+    return response.items.map(normalizeDataset);
   },
 
-  createDataset(body: {
+  async createDataset(body: {
     namespace: string;
     slug: string;
     visibility: Visibility;
@@ -133,10 +144,14 @@ export const api = {
     data_stage?: DataStage | null;
     tags?: string[];
   }): Promise<Dataset> {
-    return request("/datasets", { method: "POST", body: JSON.stringify(body) });
+    const dataset = await request<DatasetResponse>("/datasets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return normalizeDataset(dataset);
   },
 
-  updateDataset(
+  async updateDataset(
     namespace: string,
     dataset: string,
     body: {
@@ -147,10 +162,14 @@ export const api = {
       tags?: string[];
     },
   ): Promise<Dataset> {
-    return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
+    const updated = await request<DatasetResponse>(
+      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    );
+    return normalizeDataset(updated);
   },
 
   deleteDataset(namespace: string, dataset: string): Promise<void> {
@@ -159,8 +178,11 @@ export const api = {
     });
   },
 
-  dataset(namespace: string, dataset: string): Promise<Dataset> {
-    return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`);
+  async dataset(namespace: string, dataset: string): Promise<Dataset> {
+    const response = await request<DatasetResponse>(
+      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`,
+    );
+    return normalizeDataset(response);
   },
 
   revision(namespace: string, dataset: string, revision = "main"): Promise<Revision> {
