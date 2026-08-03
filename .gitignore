@@ -248,5 +248,9 @@ unsloth*
 *.jpg
 *.jpeg
 *.json
+# Keep the Data Studio web dependency manifests reproducible. The broad JSON
+# rule above is intended for generated data, not package manager metadata.
+!src/data_studio/apps/web/package.json
+!src/data_studio/apps/web/package-lock.json
 *.sh
 asssets/test_samples

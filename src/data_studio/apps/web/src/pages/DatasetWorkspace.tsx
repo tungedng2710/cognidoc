@@ -15,6 +15,7 @@ import {
   Save,
   Settings,
   Shield,
+  RotateCcw,
   Table2,
   Trash2,
   UploadCloud,
@@ -34,6 +35,7 @@ import {
 } from "react-router-dom";
 
 import { api } from "../api";
+import type { SqlQueryResult } from "../duckdb-console";
 import { AccountControls } from "../components/Auth";
 import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
@@ -42,6 +44,7 @@ import { DataTable } from "../components/DataTable";
 import { DatasetTags } from "../components/DatasetTags";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { StudioSelect } from "../components/StudioSelect";
+import { SqlConsole } from "../components/SqlConsole";
 import { UploadDialog } from "../components/UploadDialog";
 import {
   dataStageOptions,
@@ -150,6 +153,7 @@ function ViewerTab({
   const [error, setError] = useState("");
   const [filterColumn, setFilterColumn] = useState("");
   const [filterValue, setFilterValue] = useState("");
+  const [sqlPreview, setSqlPreview] = useState<{ result: SqlQueryResult; query: string } | null>(null);
   const selectedConfig = revision.configs.find((item) => item.name === configName) ?? revision.configs[0];
   const selectedSplit = selectedConfig?.splits.find((item) => item.name === splitName) ?? selectedConfig?.splits[0];
   const routeSelectionValid = revision.configs.some(
@@ -179,6 +183,10 @@ function ViewerTab({
     setFilterColumn(activeFilter?.column ?? "");
     setFilterValue(activeFilter?.value ?? "");
   }, [activeFilter]);
+
+  useEffect(() => {
+    setSqlPreview(null);
+  }, [revision.revision_id]);
 
   useEffect(() => {
     if (!routeSelectionValid) {
@@ -213,12 +221,14 @@ function ViewerTab({
   if (!selectedConfig || !selectedSplit) return <LoadingState />;
 
   const changeSelection = (config: string, split: string) => {
+    setSqlPreview(null);
     void navigate(
       `${basePath}/viewer/${encodeURIComponent(config)}/${encodeURIComponent(split)}?revision=${revision.revision_id}`,
     );
   };
   const applyFilter = (event?: FormEvent) => {
     event?.preventDefault();
+    setSqlPreview(null);
     const next = new URLSearchParams(searchParams);
     next.set("revision", revision.revision_id);
     next.set("offset", "0");
@@ -230,6 +240,7 @@ function ViewerTab({
     setSearchParams(next);
   };
   const clearFilter = () => {
+    setSqlPreview(null);
     setFilterColumn("");
     setFilterValue("");
     const next = new URLSearchParams(searchParams);
@@ -239,6 +250,7 @@ function ViewerTab({
     setSearchParams(next);
   };
   const changePage = (nextOffset: number) => {
+    setSqlPreview(null);
     const next = new URLSearchParams(searchParams);
     next.set("revision", revision.revision_id);
     next.set("offset", String(Math.max(0, nextOffset)));
@@ -270,47 +282,90 @@ function ViewerTab({
         </form>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-        <p>
-          <span className="font-semibold text-slate-800">
-            {(viewer?.total_rows ?? selectedSplit.num_rows)?.toLocaleString() ?? "Unknown"}
-          </span>{" "}
-          rows
-          <span className="mx-2">·</span>{formatBytes(selectedSplit.num_bytes)}
-          <span className="mx-2">·</span>{selectedSplit.schema.length} columns
-        </p>
-        <p>
-          {viewer ? `${viewer.available_rows.toLocaleString()} rows available` : "Reading rows…"}
-          {filter ? " for this filter" : ""}
-        </p>
-      </div>
-      <div className="mt-4">
-        {error ? <ErrorState message={error} /> : null}
-        {!error && !viewer ? <LoadingState label="Reading dataset…" /> : null}
-        {viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty or the current filter has no matches." /> : null}
-        {viewer?.rows.length ? (
-          <DataTable
-            rows={viewer.rows}
-            schema={viewer.schema}
-            namespace={namespace}
-            dataset={dataset}
-            revision={revision.revision_id}
-            config={selectedConfig.name}
-            split={selectedSplit.name}
-            rowOffset={offset}
-            rowIndices={viewer.row_indices}
-          />
-        ) : null}
-        {viewer ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+        {sqlPreview ? (
+          <>
+            <p><span className="font-semibold text-slate-800">{sqlPreview.result.totalRows.toLocaleString()}</span> query rows<span className="mx-2">·</span>{sqlPreview.result.columns.length} columns</p>
+            <p>DuckDB WASM result</p>
+          </>
+        ) : (
+          <>
             <p>
-              Showing <span className="font-semibold text-slate-800">{viewer.rows.length ? offset + 1 : 0}–{offset + viewer.rows.length}</span> of {viewer.available_rows.toLocaleString()} rows
+              <span className="font-semibold text-slate-800">
+                {(viewer?.total_rows ?? selectedSplit.num_rows)?.toLocaleString() ?? "Unknown"}
+              </span>{" "}
+              rows
+              <span className="mx-2">·</span>{formatBytes(selectedSplit.num_bytes)}
+              <span className="mx-2">·</span>{selectedSplit.schema.length} columns
             </p>
-            <div className="flex gap-2">
-              <button className="button-secondary min-h-9 px-3" type="button" disabled={offset === 0} onClick={() => changePage(offset - limit)}><ChevronLeft className="size-4" /> Previous</button>
-              <button className="button-secondary min-h-9 px-3" type="button" disabled={!canGoNext} onClick={() => changePage(offset + limit)}>Next <ChevronRight className="size-4" /></button>
+            <p>
+              {viewer ? `${viewer.available_rows.toLocaleString()} rows available` : "Reading rows…"}
+              {filter ? " for this filter" : ""}
+            </p>
+          </>
+        )}
+      </div>
+      <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_clamp(280px,20vw,340px)] xl:items-start">
+        <div className="min-w-0">
+          {sqlPreview ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-indigo-900">SQL query result</p>
+                <code className="mt-1 block truncate text-[11px] text-indigo-700">{sqlPreview.query}</code>
+              </div>
+              <button className="button-secondary min-h-8 px-3 text-xs" type="button" onClick={() => setSqlPreview(null)}><RotateCcw className="size-3.5" /> Split preview</button>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+          {!sqlPreview && error ? <ErrorState message={error} /> : null}
+          {!sqlPreview && !error && !viewer ? <LoadingState label="Reading dataset…" /> : null}
+          {sqlPreview && !sqlPreview.result.rows.length ? <EmptyState title="Query returned no rows" description="The SQL statement completed successfully, but its result was empty." /> : null}
+          {!sqlPreview && viewer && !viewer.rows.length ? <EmptyState title="No rows in this view" description="The split is empty or the current filter has no matches." /> : null}
+          {sqlPreview?.result.rows.length ? (
+            <DataTable
+              rows={sqlPreview.result.rows}
+              schema={sqlPreview.result.columns.map((name, index) => ({ name, type: sqlPreview.result.columnTypes[index] ?? "unknown", nullable: true }))}
+              namespace={namespace}
+              dataset={dataset}
+              revision={revision.revision_id}
+              config={selectedConfig.name}
+              split={selectedSplit.name}
+            />
+          ) : !sqlPreview && viewer?.rows.length ? (
+            <DataTable
+              rows={viewer.rows}
+              schema={viewer.schema}
+              namespace={namespace}
+              dataset={dataset}
+              revision={revision.revision_id}
+              config={selectedConfig.name}
+              split={selectedSplit.name}
+              rowOffset={offset}
+              rowIndices={viewer.row_indices}
+            />
+          ) : null}
+          {sqlPreview ? (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+              Showing <span className="font-semibold text-slate-800">{sqlPreview.result.rows.length.toLocaleString()}</span> of {sqlPreview.result.totalRows.toLocaleString()} query rows
+              {sqlPreview.result.truncated ? " · Results are limited to the first 100 rows" : ""}
+            </div>
+          ) : viewer ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+              <p>
+                Showing <span className="font-semibold text-slate-800">{viewer.rows.length ? offset + 1 : 0}–{offset + viewer.rows.length}</span> of {viewer.available_rows.toLocaleString()} rows
+              </p>
+              <div className="flex gap-2">
+                <button className="button-secondary min-h-9 px-3" type="button" disabled={offset === 0} onClick={() => changePage(offset - limit)}><ChevronLeft className="size-4" /> Previous</button>
+                <button className="button-secondary min-h-9 px-3" type="button" disabled={!canGoNext} onClick={() => changePage(offset + limit)}>Next <ChevronRight className="size-4" /></button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <SqlConsole
+          namespace={namespace}
+          dataset={dataset}
+          revision={revision.revision_id}
+          configs={revision.configs}
+          onResult={(result, query) => setSqlPreview({ result, query })}
+        />
       </div>
     </div>
   );
@@ -770,6 +825,7 @@ export function DatasetWorkspace() {
   const { namespace = "", dataset = "" } = useParams();
   const navigate = useNavigate();
   const isSettingsRoute = Boolean(useMatch("/datasets/:namespace/:dataset/settings"));
+  const isViewerRoute = Boolean(useMatch("/datasets/:namespace/:dataset/viewer/*"));
   const { user, loading: authLoading } = useAuth();
   const [params, setParams] = useSearchParams();
   const [repository, setRepository] = useState<Dataset | null>(null);
@@ -928,7 +984,7 @@ export function DatasetWorkspace() {
             </nav>
           </div>
         </section>
-        <section className="page-shell py-5 lg:py-6">
+        <section className={`${isViewerRoute ? "mx-auto w-[95%] max-w-none" : "page-shell"} py-5 lg:py-6`}>
           {isSettingsRoute ? (
             <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
           ) : revisionError ? (
