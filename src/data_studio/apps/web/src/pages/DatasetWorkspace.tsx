@@ -825,7 +825,6 @@ export function DatasetWorkspace() {
   const { namespace = "", dataset = "" } = useParams();
   const navigate = useNavigate();
   const isSettingsRoute = Boolean(useMatch("/datasets/:namespace/:dataset/settings"));
-  const isViewerRoute = Boolean(useMatch("/datasets/:namespace/:dataset/viewer/*"));
   const { user, loading: authLoading } = useAuth();
   const [params, setParams] = useSearchParams();
   const [repository, setRepository] = useState<Dataset | null>(null);
@@ -984,7 +983,7 @@ export function DatasetWorkspace() {
             </nav>
           </div>
         </section>
-        <section className={`${isViewerRoute ? "mx-auto w-[95%] max-w-none" : "page-shell"} py-5 lg:py-6`}>
+        <section className="page-shell py-5 lg:py-6">
           {isSettingsRoute ? (
             <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
           ) : revisionError ? (
