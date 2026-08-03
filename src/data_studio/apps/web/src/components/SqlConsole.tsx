@@ -1,8 +1,12 @@
-import { AlertCircle, CheckCircle2, LoaderCircle, Play, TerminalSquare } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, LoaderCircle, Play, TerminalSquare } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api";
-import type { BrowserSqlEngine, SqlQueryResult } from "../duckdb-console";
+import type {
+  BrowserSqlEngine,
+  SqlExportFormat,
+  SqlQueryResult,
+} from "../duckdb-console";
 import { queryForView, sqlViewsForConfigs } from "../sql-views";
 import type { DatasetConfig } from "../types";
 
@@ -22,15 +26,20 @@ export function SqlConsole({
   const views = useMemo(() => sqlViewsForConfigs(configs), [configs]);
   const [query, setQuery] = useState(() => queryForView(views[0]?.name ?? "train"));
   const [hasResult, setHasResult] = useState(false);
+  const [successfulQuery, setSuccessfulQuery] = useState("");
   const [status, setStatus] = useState("Ready to start");
   const [error, setError] = useState("");
+  const [exportError, setExportError] = useState("");
   const [running, setRunning] = useState(false);
+  const [exporting, setExporting] = useState<SqlExportFormat | null>(null);
   const engineRef = useRef<BrowserSqlEngine | null>(null);
 
   useEffect(() => {
     setQuery(queryForView(views[0]?.name ?? "train"));
     setHasResult(false);
+    setSuccessfulQuery("");
     setError("");
+    setExportError("");
     setStatus("Ready to start");
     const engine = engineRef.current;
     engineRef.current = null;
@@ -45,6 +54,7 @@ export function SqlConsole({
     if (!query.trim() || running) return;
     setRunning(true);
     setError("");
+    setExportError("");
     try {
       let engine = engineRef.current;
       if (!engine) {
@@ -74,6 +84,7 @@ export function SqlConsole({
       setStatus("Running query…");
       const nextResult = await engine.query(query);
       setHasResult(true);
+      setSuccessfulQuery(query);
       onResult(nextResult, query);
       setStatus(
         `${nextResult.totalRows.toLocaleString()} row${nextResult.totalRows === 1 ? "" : "s"} · ${nextResult.elapsedMs.toFixed(0)} ms`,
@@ -84,6 +95,29 @@ export function SqlConsole({
       if (!engineRef.current) setStatus("DuckDB failed to start");
     } finally {
       setRunning(false);
+    }
+  };
+
+  const downloadResult = async (format: SqlExportFormat) => {
+    const engine = engineRef.current;
+    if (!engine || !successfulQuery || exporting) return;
+    setExporting(format);
+    setExportError("");
+    try {
+      const exported = await engine.exportQuery(successfulQuery, format);
+      const buffer = new ArrayBuffer(exported.bytes.byteLength);
+      new Uint8Array(buffer).set(exported.bytes);
+      const blob = new Blob([buffer], { type: exported.mediaType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exported.fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (caught: unknown) {
+      setExportError(caught instanceof Error ? caught.message : `Could not export ${format.toUpperCase()}.`);
+    } finally {
+      setExporting(null);
     }
   };
 
@@ -153,6 +187,26 @@ export function SqlConsole({
         </div>
         {error ? (
           <div className="m-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-700">{error}</div>
+        ) : null}
+        {hasResult ? (
+          <div className="border-b border-slate-100 px-3 py-3">
+            <p className="text-[10px] font-bold tracking-[0.12em] text-slate-400 uppercase">Download result</p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              {(["csv", "json", "parquet"] as const).map((format) => (
+                <button
+                  className="button-secondary min-h-8 min-w-0 px-2 text-[10px] uppercase"
+                  type="button"
+                  disabled={exporting !== null}
+                  key={format}
+                  onClick={() => void downloadResult(format)}
+                >
+                  {exporting === format ? <LoaderCircle className="size-3 animate-spin" /> : <Download className="size-3" />}
+                  {format}
+                </button>
+              ))}
+            </div>
+            {exportError ? <p className="mt-2 text-[11px] leading-4 text-rose-600">{exportError}</p> : null}
+          </div>
         ) : null}
         {!error ? (
           <div className="grid flex-1 place-items-center p-6 text-center">

@@ -23,6 +23,14 @@ export interface SqlQueryResult {
   elapsedMs: number;
 }
 
+export type SqlExportFormat = "csv" | "json" | "parquet";
+
+export interface SqlExportResult {
+  bytes: Uint8Array;
+  mediaType: string;
+  fileName: string;
+}
+
 function suffixOf(path: string): string {
   const fileName = path.split("/").at(-1) ?? path;
   const dot = fileName.lastIndexOf(".");
@@ -31,6 +39,10 @@ function suffixOf(path: string): string {
 
 function quoteSqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function queryWithoutTrailingSemicolon(sql: string): string {
+  return sql.trim().replace(/;+\s*$/, "");
 }
 
 function readerSql(path: string, suffix: string): string {
@@ -138,6 +150,36 @@ export class BrowserSqlEngine {
       truncated: table.numRows > maxDisplayedRows,
       elapsedMs: performance.now() - started,
     };
+  }
+
+  async exportQuery(sql: string, format: SqlExportFormat): Promise<SqlExportResult> {
+    if (!this.connection || !this.database) throw new Error("DuckDB WASM is not ready.");
+    const query = queryWithoutTrailingSemicolon(sql);
+    if (!query) throw new Error("Run a query before downloading its result.");
+    const fileName = `query-result.${format}`;
+    const virtualPath = `query-result-${crypto.randomUUID()}.${format}`;
+    const options: Record<SqlExportFormat, string> = {
+      csv: "FORMAT CSV, HEADER TRUE",
+      json: "FORMAT JSON, ARRAY TRUE",
+      parquet: "FORMAT PARQUET, COMPRESSION ZSTD",
+    };
+    const mediaTypes: Record<SqlExportFormat, string> = {
+      csv: "text/csv;charset=utf-8",
+      json: "application/json",
+      parquet: "application/vnd.apache.parquet",
+    };
+    try {
+      await this.connection.query(
+        `COPY (${query}) TO ${quoteSqlString(virtualPath)} (${options[format]})`,
+      );
+      return {
+        bytes: await this.database.copyFileToBuffer(virtualPath),
+        mediaType: mediaTypes[format],
+        fileName,
+      };
+    } finally {
+      await this.database.dropFile(virtualPath).catch(() => undefined);
+    }
   }
 
   async close(): Promise<void> {
