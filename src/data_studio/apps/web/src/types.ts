@@ -16,6 +16,7 @@ export interface RevisionSummary {
   source_object_set_checksum?: string | null;
   branch: string;
   commit_message: string;
+  data_stage: DataStage | null;
   status: RevisionStatus;
   manifest_sha256: string;
   error_code: string | null;

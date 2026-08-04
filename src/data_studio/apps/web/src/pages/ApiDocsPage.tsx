@@ -189,11 +189,12 @@ ds_json() {
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 When <InlineCode>commit_message</InlineCode> is omitted, the published revision uses
                 its generated revision ID as the message. Include the field in step 1 to provide a
-                custom message instead.
+                custom message instead. The optional <InlineCode>data_stage</InlineCode> records the
+                lifecycle stage on the first revision.
               </p>
               <CodeBlock label="Step 1 · Open an upload">{String.raw`UPLOAD=$(
   ds_json \
-    --data '{}' \
+    --data '{"data_stage":"raw"}' \
     "$API/datasets/$DATASET/uploads" \
   | jq --raw-output '.id'
 )`}</CodeBlock>
@@ -212,10 +213,18 @@ ds_json() {
 )
 
 echo "Published revision: $REVISION"`}</CodeBlock>
+              <CodeBlock label="Create a stage revision">{String.raw`ds_json \
+  --data '{
+    "data_stage": "raw_validated",
+    "commit_message": "Validated the raw collection"
+  }' \
+  "$API/datasets/$DATASET/stage" \
+  | jq`}</CodeBlock>
               <p className="mt-4 text-sm leading-6 text-slate-500">
                 Every <InlineCode>files</InlineCode> value needs a matching
                 <InlineCode>paths</InlineCode> value. Send large folders in several requests, then
-                publish once.
+                publish once. Later stage changes require a message and create metadata-only
+                immutable revisions without re-uploading the source files.
               </p>
             </section>
 

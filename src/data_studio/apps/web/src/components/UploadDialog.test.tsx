@@ -17,7 +17,9 @@ describe("UploadDialog", () => {
     const onComplete = vi.fn();
     render(
       <UploadDialog
+        allowStageSelection
         dataset="plates"
+        initialDataStage={null}
         namespace="owner"
         onClose={vi.fn()}
         onComplete={onComplete}
@@ -31,6 +33,8 @@ describe("UploadDialog", () => {
     expect(fileInput).not.toHaveAttribute("webkitdirectory");
     expect(folderInput).toHaveAttribute("webkitdirectory");
     expect(revisionMessage).toHaveValue("Add revision via upload");
+    fireEvent.click(screen.getByRole("combobox", { name: "Initial dataset data stage" }));
+    fireEvent.click(screen.getByRole("option", { name: /Raw validated/ }));
 
     const readme = new File(["# Dataset"], "README.md", {
       type: "text/markdown",
@@ -51,6 +55,7 @@ describe("UploadDialog", () => {
         "plates",
         [readme, parquet],
         "Refresh training labels",
+        "raw_validated",
         expect.any(Function),
         expect.any(AbortSignal),
       );

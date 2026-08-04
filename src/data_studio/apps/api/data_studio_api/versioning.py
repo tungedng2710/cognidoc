@@ -291,6 +291,7 @@ class GitDVCRevisionService:
         parent_revision_id: str | None,
         parent_git_commit: str | None,
         commit_message: str,
+        data_stage: str | None,
         manifest_bytes: bytes,
         manifest_sha256: str,
         source_object_set_checksum: str,
@@ -325,6 +326,7 @@ class GitDVCRevisionService:
                     "parent_revision_id": parent_revision_id,
                     "manifest_sha256": manifest_sha256,
                     "source_object_set_checksum": source_object_set_checksum,
+                    "data_stage": data_stage,
                 },
             )
             self._dvc(repository, "add", "data")
@@ -341,6 +343,59 @@ class GitDVCRevisionService:
                 raise VersioningError("DVC remote verification found objects that are not durable.")
 
             self._git(repository, "add", "--all")
+            self._git(repository, "commit", "--message", commit_message)
+            git_commit = self._git(repository, "rev-parse", "HEAD").stdout.strip()
+            self._git(repository, "update-ref", revision_ref, git_commit, "0" * 40)
+            return RevisionBinding(git_commit, dvc_revision)
+
+    def publish_metadata(
+        self,
+        *,
+        repository_id: str,
+        branch: str,
+        revision_id: str,
+        parent_revision_id: str,
+        parent_git_commit: str | None,
+        commit_message: str,
+        manifest_bytes: bytes,
+        manifest_sha256: str,
+        source_object_set_checksum: str,
+        data_stage: str | None,
+    ) -> RevisionBinding:
+        if not self.settings.versioning_enabled:
+            raise VersioningError("Git+DVC versioning is disabled.")
+        self._validate_revision_id(revision_id)
+        self._validate_branch(branch)
+        if not parent_git_commit or not re.fullmatch(r"[0-9a-f]{40}", parent_git_commit):
+            raise VersioningError("A stage revision requires a valid parent Git commit.")
+        revision_ref = f"refs/data-studio/revisions/{revision_id}"
+        with self._lock(repository_id):
+            repository = self._ensure_repository(repository_id, branch)
+            existing = self._binding_from_ref(repository, revision_ref, manifest_bytes)
+            if existing:
+                return existing
+
+            self._checkout_parent(repository, branch, parent_git_commit)
+            (repository / "manifest.json").write_bytes(manifest_bytes)
+            metadata_root = repository / ".data-studio"
+            metadata_root.mkdir(exist_ok=True)
+            (metadata_root / "revision.json").write_text(
+                json.dumps(
+                    {
+                        "revision_id": revision_id,
+                        "parent_revision_id": parent_revision_id,
+                        "manifest_sha256": manifest_sha256,
+                        "source_object_set_checksum": source_object_set_checksum,
+                        "data_stage": data_stage,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            dvc_revision = self._dvc_revision(repository / "data.dvc")
+            self._git(repository, "add", "manifest.json", ".data-studio/revision.json")
             self._git(repository, "commit", "--message", commit_message)
             git_commit = self._git(repository, "rev-parse", "HEAD").stdout.strip()
             self._git(repository, "update-ref", revision_ref, git_commit, "0" * 40)

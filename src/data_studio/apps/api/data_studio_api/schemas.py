@@ -124,6 +124,7 @@ class RevisionSummary(OrmModel):
     revision_id: str
     branch: str
     commit_message: str
+    data_stage: DataStage | None
     git_commit: str | None
     dvc_revision: str | None
     source_object_set_checksum: str | None
@@ -274,6 +275,7 @@ class DatasetList(BaseModel):
 
 class UploadCreate(BaseModel):
     commit_message: str | None = Field(default=None, min_length=1, max_length=500)
+    data_stage: DataStage | None = None
 
     @field_validator("commit_message")
     @classmethod
@@ -291,6 +293,7 @@ class UploadRead(OrmModel):
     repository_id: str
     status: UploadStatus
     commit_message: str
+    data_stage: DataStage | None
     bytes_received: int
     file_count: int
     revision_id: str | None
@@ -308,6 +311,19 @@ class UploadFilesResult(BaseModel):
 
 class UploadComplete(BaseModel):
     expected_file_count: int | None = Field(default=None, ge=1)
+
+
+class StageChangeCreate(BaseModel):
+    data_stage: DataStage | None
+    commit_message: str = Field(min_length=1, max_length=500)
+
+    @field_validator("commit_message")
+    @classmethod
+    def normalized_commit_message(cls, commit_message: str) -> str:
+        normalized = commit_message.strip()
+        if not normalized:
+            raise ValueError("commit message cannot be empty")
+        return normalized
 
 
 class ViewerResponse(BaseModel):

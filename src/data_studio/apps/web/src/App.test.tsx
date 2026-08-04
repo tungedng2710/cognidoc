@@ -118,14 +118,14 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Start using the API in minutes" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "3. Upload and publish" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "5. Download a repository" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(9);
+    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(10);
     const examples = Array.from(document.querySelectorAll("pre code")).map(
       (element) => element.textContent ?? "",
     );
     const uploadFiles = examples.find((example) => example.includes("files=@README.md"));
     const openUpload = examples.find((example) => example.includes("$DATASET/uploads"));
     expect(uploadFiles?.split("\n")).toContain("  --form 'files=@README.md' \\");
-    expect(openUpload).toContain("--data '{}'");
+    expect(openUpload).toContain("--data '{\"data_stage\":\"raw\"}'");
     expect(screen.getByText(/generated revision ID as the message/)).toBeInTheDocument();
     expect(examples.every((example) => example.split("\n").every((line) => line.length < 88))).toBe(true);
   });
@@ -496,8 +496,10 @@ describe("App", () => {
     fireEvent.change(await screen.findByRole("textbox", { name: /Dataset name/ }), {
       target: { value: "renamed-dataset" },
     });
-    fireEvent.click(screen.getByRole("combobox", { name: "Dataset data stage" }));
-    fireEvent.click(screen.getByRole("option", { name: /Training ready/ }));
+    expect(screen.getByRole("combobox", { name: "Dataset data stage" })).toBeDisabled();
+    expect(
+      screen.getByText("Choose the initial stage when publishing the first upload."),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "New dataset tag" }), {
       target: { value: "License Plates" },
     });
@@ -513,7 +515,6 @@ describe("App", () => {
             slug: "renamed-dataset",
             description: "",
             visibility: "private",
-            data_stage: "training_ready",
             tags: ["license-plates"],
           }),
         }),
@@ -531,6 +532,110 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/v1/datasets/owner/renamed-dataset",
         expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+
+  it("creates a revision with a default commit message when data stage changes", async () => {
+    const summary = {
+      revision_id: "rev-one",
+      branch: "main",
+      commit_message: "Initial upload",
+      data_stage: "raw",
+      status: "ready",
+      manifest_sha256: "a".repeat(64),
+      error_code: null,
+      error_message: null,
+      created_at: "2026-08-04T08:00:00Z",
+    };
+    let dataset = {
+      id: "dataset-id",
+      namespace: "owner",
+      slug: "stage-data",
+      visibility: "private",
+      description: "",
+      data_stage: "raw",
+      tags: [],
+      default_branch: "main",
+      created_at: "2026-08-04T08:00:00Z",
+      updated_at: "2026-08-04T08:00:00Z",
+      owner: "owner",
+      can_edit: true,
+      latest_revision: summary,
+    };
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: "owner-id",
+            username: "owner",
+            display_name: "Owner",
+            email: null,
+            is_admin: false,
+            avatar_updated_at: null,
+            created_at: "2026-08-04T08:00:00Z",
+          }),
+        });
+      }
+      if (url.endsWith("/revisions")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([summary]) });
+      }
+      if (url.includes("/revisions/rev-")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            ...dataset.latest_revision,
+            card_markdown: "",
+            card_html: "",
+            card_metadata: {},
+            files: [],
+            configs: [],
+          }),
+        });
+      }
+      if (url.endsWith("/stage") && init?.method === "POST") {
+        const nextSummary = {
+          ...summary,
+          revision_id: "rev-two",
+          data_stage: "training_ready",
+          commit_message: "Stage update",
+        };
+        dataset = { ...dataset, data_stage: "training_ready", latest_revision: nextSummary };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dataset) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dataset) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/datasets/owner/stage-data/settings"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("combobox", { name: "Dataset data stage" }));
+    fireEvent.click(screen.getByRole("option", { name: /Training ready/ }));
+    const message = screen.getByRole("textbox", { name: /Stage commit message/ });
+    expect((message as HTMLTextAreaElement).value).toMatch(
+      /^change from stage raw to stage training ready at \d{4}-\d{2}-\d{2}T/,
+    );
+    const defaultMessage = (message as HTMLTextAreaElement).value;
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/datasets/owner/stage-data/stage",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            data_stage: "training_ready",
+            commit_message: defaultMessage,
+          }),
+        }),
       );
     });
   });

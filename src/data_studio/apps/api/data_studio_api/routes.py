@@ -35,6 +35,7 @@ from .schemas import (
     JobRead,
     RevisionRead,
     RevisionSummary,
+    StageChangeCreate,
     UploadComplete,
     UploadCreate,
     UploadFilesResult,
@@ -103,6 +104,7 @@ def _revision_payload(revision: DatasetRevision, *, include_files: bool) -> dict
         "revision_id": revision.revision_id,
         "branch": revision.branch,
         "commit_message": revision.commit_message,
+        "data_stage": revision.data_stage,
         "git_commit": revision.git_commit,
         "dvc_revision": revision.dvc_revision,
         "source_object_set_checksum": revision.source_object_set_checksum,
@@ -198,6 +200,26 @@ def patch_dataset(
     return _repository_payload(db, repository, principal)
 
 
+@router.post("/datasets/{namespace}/{dataset}/stage", response_model=DatasetRead)
+def change_dataset_stage(
+    namespace: str,
+    dataset: str,
+    body: StageChangeCreate,
+    db: Database,
+    datasets: Service,
+    principal: CurrentPrincipal,
+) -> dict[str, Any]:
+    _repository_for_write(db, namespace, dataset, principal)
+    datasets.change_data_stage(
+        namespace,
+        dataset,
+        body.data_stage,
+        body.commit_message,
+    )
+    repository = get_repository(db, namespace, dataset)
+    return _repository_payload(db, repository, principal)
+
+
 @router.delete("/datasets/{namespace}/{dataset}", status_code=204)
 def delete_dataset(
     namespace: str,
@@ -222,7 +244,13 @@ def create_upload(
 ) -> UploadRead:
     _repository_for_write(db, namespace, dataset, principal)
     return UploadRead.model_validate(
-        datasets.create_upload(namespace, dataset, body.commit_message)
+        datasets.create_upload(
+            namespace,
+            dataset,
+            body.commit_message,
+            body.data_stage,
+            "data_stage" in body.model_fields_set,
+        )
     )
 
 

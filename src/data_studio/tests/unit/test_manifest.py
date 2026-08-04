@@ -12,3 +12,14 @@ def test_manifest_is_deterministic_and_sorted() -> None:
     assert manifest_a == manifest_b
     assert encoded_a == encoded_b
     assert digest_a == digest_b
+
+
+def test_manifest_digest_includes_data_stage() -> None:
+    source = ManifestFile("data.jsonl", 10, "a" * 64, "application/json", "source/data")
+
+    raw, _, raw_digest = build_manifest("team/demo", [source], data_stage="raw")
+    ready, _, ready_digest = build_manifest("team/demo", [source], data_stage="training_ready")
+
+    assert raw["data_stage"] == "raw"
+    assert ready["data_stage"] == "training_ready"
+    assert raw_digest != ready_digest

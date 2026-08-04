@@ -75,6 +75,14 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
 }
 
+function stageLabel(stage: DataStage | null): string {
+  return stage?.replaceAll("_", " ") ?? "none";
+}
+
+function defaultStageMessage(from: DataStage | null, to: DataStage | null): string {
+  return `change from stage ${stageLabel(from)} to stage ${stageLabel(to)} at ${new Date().toISOString()}`;
+}
+
 function SelectionControls({
   configs,
   configName,
@@ -559,6 +567,7 @@ function VersionsTab({ revisions, selected }: { revisions: RevisionSummary[]; se
             <span className="flex flex-wrap items-center gap-3">
               <code className="font-semibold text-indigo-700">{revision.revision_id}</code>
               <span className="status-pill">{revision.status}</span>
+              <span className="status-pill">stage: {stageLabel(revision.data_stage)}</span>
               <span className="text-xs text-slate-400">{new Date(revision.created_at).toLocaleString()}</span>
             </span>
             <span className="mt-1 block text-sm text-slate-600">{revision.commit_message}</span>
@@ -592,6 +601,7 @@ function SettingsTab({
   const [dataStage, setDataStage] = useState<DataStage | null>(
     dataset.data_stage ?? null,
   );
+  const [stageMessage, setStageMessage] = useState("");
   const [tags, setTags] = useState(dataset.tags ?? []);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -601,16 +611,30 @@ function SettingsTab({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    const stageChanged = dataStage !== dataset.data_stage;
+    if (stageChanged && !dataset.latest_revision) {
+      setError("Choose the initial data stage when publishing the first upload.");
+      return;
+    }
+    if (stageChanged && !stageMessage.trim()) {
+      setError("Enter a commit message for the data stage revision.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      const updated = await api.updateDataset(dataset.namespace, dataset.slug, {
+      let updated = await api.updateDataset(dataset.namespace, dataset.slug, {
         slug,
         description,
         visibility,
-        data_stage: dataStage,
         tags,
       });
+      if (stageChanged) {
+        updated = await api.changeDataStage(updated.namespace, updated.slug, {
+          data_stage: dataStage,
+          commit_message: stageMessage.trim(),
+        });
+      }
       onUpdated(updated);
       if (updated.slug !== dataset.slug) {
         await navigate(`/datasets/${updated.namespace}/${updated.slug}/settings`, { replace: true });
@@ -700,14 +724,36 @@ function SettingsTab({
               <StudioSelect
                 ariaLabel="Dataset data stage"
                 className="mt-1"
+                disabled={!dataset.latest_revision}
                 value={dataStage ?? ""}
                 options={dataStageOptions}
-                onChange={(next) => setDataStage((next || null) as DataStage | null)}
+                onChange={(next) => {
+                  const nextStage = (next || null) as DataStage | null;
+                  setDataStage(nextStage);
+                  setStageMessage(defaultStageMessage(dataset.data_stage, nextStage));
+                }}
               />
               <span className="mt-1 block font-normal text-slate-400">
-                Select one lifecycle stage, or leave it as None.
+                {dataset.latest_revision
+                  ? "Changing stage publishes a metadata-only immutable revision."
+                  : "Choose the initial stage when publishing the first upload."}
               </span>
             </div>
+            {dataStage !== dataset.data_stage ? (
+              <label className="field-label">
+                Stage commit message
+                <textarea
+                  className="field-input min-h-20 resize-y"
+                  maxLength={500}
+                  required
+                  value={stageMessage}
+                  onChange={(event) => setStageMessage(event.target.value)}
+                />
+                <span className="mt-1 block font-normal text-slate-400">
+                  Required because this stage change creates a new revision.
+                </span>
+              </label>
+            ) : null}
             <div className="field-label">
               <span>Optional tags</span>
               {tags.length ? (
@@ -1000,7 +1046,21 @@ export function DatasetWorkspace() {
         </section>
         <section className="page-shell py-5 lg:py-6">
           {isSettingsRoute ? (
-            <SettingsTab dataset={repository} onUpdated={setRepository} onDeleted={() => void navigate("/")} />
+            <SettingsTab
+              dataset={repository}
+              onUpdated={(updated) => {
+                setRepository(updated);
+                reloadRepository();
+                if (
+                  updated.latest_revision
+                  && updated.latest_revision.revision_id
+                    !== repository.latest_revision?.revision_id
+                ) {
+                  changeRevision(updated.latest_revision.revision_id);
+                }
+              }}
+              onDeleted={() => void navigate("/")}
+            />
           ) : revisionError ? (
             <ErrorState message={revisionError} retry={() => setRevisionReload((value) => value + 1)} />
           ) : selectedRevision && !revision ? (
@@ -1021,7 +1081,22 @@ export function DatasetWorkspace() {
           )}
         </section>
       </main>
-      {repository.can_edit ? <UploadDialog namespace={namespace} dataset={dataset} open={uploadOpen} onClose={() => setUploadOpen(false)} onComplete={(nextRevision) => { setUploadOpen(false); setRevision(nextRevision); reloadRepository(); changeRevision(nextRevision.revision_id); }} /> : null}
+      {repository.can_edit ? (
+        <UploadDialog
+          allowStageSelection={!repository.latest_revision}
+          dataset={dataset}
+          initialDataStage={repository.data_stage}
+          namespace={namespace}
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onComplete={(nextRevision) => {
+            setUploadOpen(false);
+            setRevision(nextRevision);
+            reloadRepository();
+            changeRevision(nextRevision.revision_id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

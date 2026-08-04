@@ -29,6 +29,7 @@ def _binding(
         parent_revision_id=parent[0] if parent else None,
         parent_git_commit=parent[1].git_commit if parent else None,
         commit_message="Publish fixture",
+        data_stage=None,
         manifest_bytes=manifest,
         manifest_sha256=manifest_sha,
         source_object_set_checksum=hashlib.sha256(b"inventory").hexdigest(),

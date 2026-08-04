@@ -14,12 +14,16 @@ class ManifestFile:
 
 
 def build_manifest(
-    repository: str, files: list[ManifestFile], parent_revision: str | None = None
+    repository: str,
+    files: list[ManifestFile],
+    parent_revision: str | None = None,
+    data_stage: str | None = None,
 ) -> tuple[dict[str, Any], bytes, str]:
     manifest: dict[str, Any] = {
         "manifest_version": 1,
         "repository": repository,
         "parent_revision": parent_revision,
+        "data_stage": data_stage,
         "files": [asdict(file) for file in sorted(files, key=lambda item: item.path)],
     }
     encoded = json.dumps(

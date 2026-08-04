@@ -10,12 +10,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api";
 import type { UploadProgress } from "../api";
-import type { Revision } from "../types";
+import { dataStageOptions } from "../dataset-tags";
+import type { DataStage, Revision } from "../types";
+import { StudioSelect } from "./StudioSelect";
 
 interface UploadDialogProps {
   namespace: string;
   dataset: string;
   open: boolean;
+  allowStageSelection?: boolean;
+  initialDataStage?: DataStage | null;
   onClose: () => void;
   onComplete: (revision: Revision) => void;
 }
@@ -39,6 +43,8 @@ export function UploadDialog({
   namespace,
   dataset,
   open,
+  allowStageSelection = false,
+  initialDataStage = null,
   onClose,
   onComplete,
 }: UploadDialogProps) {
@@ -46,6 +52,7 @@ export function UploadDialog({
   const abortRef = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [revisionMessage, setRevisionMessage] = useState(DEFAULT_REVISION_MESSAGE);
+  const [dataStage, setDataStage] = useState<DataStage | null>(initialDataStage);
   const [selectionKind, setSelectionKind] = useState<"files" | "folder" | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState("");
@@ -55,12 +62,13 @@ export function UploadDialog({
     if (!open) return;
     setFiles([]);
     setRevisionMessage(DEFAULT_REVISION_MESSAGE);
+    setDataStage(initialDataStage);
     setSelectionKind(null);
     setProgress(null);
     setError("");
     folderInputRef.current?.setAttribute("webkitdirectory", "");
     folderInputRef.current?.setAttribute("directory", "");
-  }, [open]);
+  }, [initialDataStage, open]);
 
   if (!open) return null;
 
@@ -81,6 +89,7 @@ export function UploadDialog({
         dataset,
         files,
         revisionMessage.trim(),
+        allowStageSelection ? dataStage : undefined,
         setProgress,
         controller.signal,
       );
@@ -141,6 +150,22 @@ export function UploadDialog({
             Describe what changed in this immutable revision.
           </span>
         </label>
+
+        {allowStageSelection ? (
+          <div className="field-label mt-4">
+            <span>Initial data stage</span>
+            <StudioSelect
+              ariaLabel="Initial dataset data stage"
+              className="mt-1"
+              value={dataStage ?? ""}
+              options={dataStageOptions}
+              onChange={(next) => setDataStage((next || null) as DataStage | null)}
+            />
+            <span className="mt-1 block font-normal text-slate-500">
+              This stage is recorded on the first immutable revision.
+            </span>
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label

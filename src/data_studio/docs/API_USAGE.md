@@ -87,7 +87,7 @@ Uploading has three steps: open an upload, send files, then publish it.
 ```bash
 UPLOAD=$(
   ds_json \
-    --data '{}' \
+    --data '{"data_stage":"raw"}' \
     "$API/datasets/$DATASET/uploads" \
   | jq --raw-output '.id'
 )
@@ -96,6 +96,8 @@ UPLOAD=$(
 When `commit_message` is omitted, the published revision uses its generated
 revision ID as the message. To set a custom message, send a value such as
 `{"commit_message":"Refresh training labels"}` when opening the upload.
+The optional `data_stage` field sets the lifecycle stage recorded on the first
+revision.
 
 ### 2. Send files
 
@@ -130,6 +132,21 @@ echo "Published revision: $REVISION"
 
 Publishing is content-addressed and idempotent. Retrying the same completed
 repository tree returns the existing immutable revision.
+
+### Change data stage
+
+Changing stage creates a metadata-only immutable revision that reuses the
+existing source objects, previews, and DVC data. A commit message is required.
+
+```bash
+ds_json \
+  --data '{
+    "data_stage": "raw_validated",
+    "commit_message": "Validated the raw collection"
+  }' \
+  "$API/datasets/$DATASET/stage" \
+  | jq
+```
 
 ## Browse datasets
 

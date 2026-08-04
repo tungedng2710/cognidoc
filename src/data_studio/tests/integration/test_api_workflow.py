@@ -342,25 +342,82 @@ def test_dataset_stage_and_optional_tags_can_be_updated(client: TestClient) -> N
     )
     assert created.status_code == 201, created.text
 
-    updated = client.patch(
+    tagged = client.patch(
         "/api/v1/datasets/owner/plate-data",
         json={
-            "data_stage": "raw_validated",
             "tags": ["License Plates", "Vietnam", "license-plates"],
         },
     )
+    assert tagged.status_code == 200, tagged.text
+    assert tagged.json()["tags"] == ["license-plates", "vietnam"]
 
-    assert updated.status_code == 200, updated.text
-    assert updated.json()["data_stage"] == "raw_validated"
-    assert updated.json()["tags"] == ["license-plates", "vietnam"]
-
-    cleared = client.patch(
+    stage_before_upload = client.patch(
         "/api/v1/datasets/owner/plate-data",
-        json={"data_stage": None, "tags": []},
+        json={"data_stage": "raw"},
     )
-    assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["data_stage"] is None
-    assert cleared.json()["tags"] == []
+    assert stage_before_upload.status_code == 422
+    assert stage_before_upload.json()["code"] == "initial_stage_requires_upload"
+
+    upload = client.post(
+        "/api/v1/datasets/owner/plate-data/uploads",
+        json={"commit_message": "Initial data", "data_stage": "raw"},
+    )
+    assert upload.status_code == 201, upload.text
+    content = b'{"image":"plate.jpg","label":"car"}\n'
+    uploaded = client.post(
+        f"/api/v1/uploads/{upload.json()['id']}/files",
+        files=[
+            ("files", ("train.jsonl", content, "application/x-ndjson")),
+            ("paths", (None, "train.jsonl")),
+        ],
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    initial = client.post(
+        f"/api/v1/uploads/{upload.json()['id']}/complete",
+        json={"expected_file_count": 1},
+    )
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["data_stage"] == "raw"
+
+    upload_stage_without_message = client.post(
+        "/api/v1/datasets/owner/plate-data/uploads",
+        json={"data_stage": "raw_validated"},
+    )
+    assert upload_stage_without_message.status_code == 422
+    assert upload_stage_without_message.json()["code"] == "stage_commit_message_required"
+
+    direct_patch = client.patch(
+        "/api/v1/datasets/owner/plate-data",
+        json={"data_stage": "raw_validated"},
+    )
+    assert direct_patch.status_code == 422
+    assert direct_patch.json()["code"] == "data_stage_revision_required"
+
+    missing_message = client.post(
+        "/api/v1/datasets/owner/plate-data/stage",
+        json={"data_stage": "raw_validated"},
+    )
+    assert missing_message.status_code == 422
+
+    changed = client.post(
+        "/api/v1/datasets/owner/plate-data/stage",
+        json={
+            "data_stage": "raw_validated",
+            "commit_message": "Validated the raw collection",
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["data_stage"] == "raw_validated"
+    assert changed.json()["latest_revision"]["commit_message"] == ("Validated the raw collection")
+    assert changed.json()["latest_revision"]["data_stage"] == "raw_validated"
+
+    revisions = client.get("/api/v1/datasets/owner/plate-data/revisions").json()
+    assert [item["data_stage"] for item in revisions] == ["raw_validated", "raw"]
+    assert revisions[0]["revision_id"] != revisions[1]["revision_id"]
+    copied = client.get(
+        f"/api/v1/datasets/owner/plate-data/blob/{revisions[0]['revision_id']}/train.jsonl"
+    )
+    assert copied.content == content
 
 
 def test_public_read_and_owner_only_mutations(client: TestClient) -> None:

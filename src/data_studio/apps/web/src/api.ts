@@ -190,6 +190,18 @@ export const api = {
     return normalizeDataset(updated);
   },
 
+  async changeDataStage(
+    namespace: string,
+    dataset: string,
+    body: { data_stage: DataStage | null; commit_message: string },
+  ): Promise<Dataset> {
+    const updated = await request<DatasetResponse>(
+      `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/stage`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return normalizeDataset(updated);
+  },
+
   deleteDataset(namespace: string, dataset: string): Promise<void> {
     return request(`/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}`, {
       method: "DELETE",
@@ -301,6 +313,7 @@ export const api = {
     dataset: string,
     files: File[],
     commitMessage: string,
+    dataStage: DataStage | null | undefined,
     onProgress: (progress: UploadProgress) => void,
     signal?: AbortSignal,
   ): Promise<Revision> {
@@ -318,6 +331,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify({
           commit_message: commitMessage,
+          ...(dataStage !== undefined ? { data_stage: dataStage } : {}),
         }),
         signal,
       },

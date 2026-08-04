@@ -196,6 +196,16 @@ class DatasetService:
 
     def patch_repository(self, namespace: str, slug: str, data: DatasetPatch) -> DatasetRepository:
         repository = get_repository(self.db, namespace, slug)
+        if "data_stage" in data.model_fields_set and data.data_stage != repository.data_stage:
+            if latest_revision(self.db, repository.id) is None:
+                raise ValidationError(
+                    "initial_stage_requires_upload",
+                    "Choose the initial data stage when publishing the first upload.",
+                )
+            raise ValidationError(
+                "data_stage_revision_required",
+                "Changing data stage requires a new revision and commit message.",
+            )
         changes = {
             key: value
             for key, value in data.model_dump(exclude_unset=True).items()
@@ -500,11 +510,148 @@ class DatasetService:
         filename = f"{namespace}-{slug}-{resolved.revision_id}.zip"
         return filename, len(files), iter_repository_zip(files, self.storage)
 
-    def create_upload(self, namespace: str, slug: str, commit_message: str | None) -> UploadSession:
+    def change_data_stage(
+        self,
+        namespace: str,
+        slug: str,
+        data_stage: str | None,
+        commit_message: str,
+    ) -> DatasetRevision:
         repository = get_repository(self.db, namespace, slug)
+        if repository.data_stage == data_stage:
+            raise ValidationError(
+                "data_stage_unchanged",
+                "Choose a data stage different from the current stage.",
+            )
+        latest = latest_revision(self.db, repository.id)
+        if latest is None:
+            raise ValidationError(
+                "initial_stage_requires_upload",
+                "Choose the initial data stage when publishing the first upload.",
+            )
+        parent = get_revision(self.db, repository, latest.revision_id, include_files=True)
+        entries = [
+            ManifestFile(
+                path=item.path,
+                size_bytes=item.size_bytes,
+                sha256=item.sha256,
+                media_type=item.media_type,
+                object_key=item.storage_object_key,
+            )
+            for item in parent.files
+        ]
+        _, manifest_bytes, manifest_sha = build_manifest(
+            f"{repository.namespace}/{repository.slug}",
+            entries,
+            parent.revision_id,
+            data_stage,
+        )
+        revision_id = manifest_sha[:12]
+        source_checksum = parent.source_object_set_checksum or self._source_object_set_checksum(
+            entries
+        )
+        manifest_key = (
+            f"datasets/derived/{repository.namespace}/{repository.slug}/{revision_id}/manifest.json"
+        )
+        revision = DatasetRevision(
+            repository_id=repository.id,
+            parent_revision_id=parent.id,
+            revision_id=revision_id,
+            branch=repository.default_branch,
+            commit_message=commit_message,
+            data_stage=data_stage,
+            source_object_set_checksum=source_checksum,
+            manifest_object_key=manifest_key,
+            manifest_sha256=manifest_sha,
+            status=RevisionStatus.ready,
+            card_markdown=parent.card_markdown,
+            card_html=parent.card_html,
+            card_metadata=parent.card_metadata,
+        )
+        self.db.add(revision)
+        self.db.flush()
+
+        for item in parent.files:
+            self.db.add(
+                RepositoryFile(
+                    revision_id=revision.id,
+                    path=item.path,
+                    size_bytes=item.size_bytes,
+                    sha256=item.sha256,
+                    media_type=item.media_type,
+                    storage_object_key=item.storage_object_key,
+                    is_previewable=item.is_previewable,
+                )
+            )
+        for source_config in parent.configs:
+            config = DatasetConfig(
+                revision_id=revision.id,
+                name=source_config.name,
+                builder_name=source_config.builder_name,
+                builder_parameters=source_config.builder_parameters,
+            )
+            self.db.add(config)
+            self.db.flush()
+            for source_split in source_config.splits:
+                self.db.add(
+                    DatasetSplit(
+                        config_id=config.id,
+                        name=source_split.name,
+                        data_files=source_split.data_files,
+                        num_rows=source_split.num_rows,
+                        num_bytes=source_split.num_bytes,
+                        schema_json=source_split.schema_json,
+                        preview_json=source_split.preview_json,
+                        statistics_json=source_split.statistics_json,
+                    )
+                )
+
+        self.storage.put_bytes(manifest_key, manifest_bytes, "application/json")
+        if self.versioning:
+            binding = self.versioning.publish_metadata(
+                repository_id=repository.id,
+                branch=repository.default_branch,
+                revision_id=revision_id,
+                parent_revision_id=parent.revision_id,
+                parent_git_commit=parent.git_commit,
+                commit_message=commit_message,
+                manifest_bytes=manifest_bytes,
+                manifest_sha256=manifest_sha,
+                source_object_set_checksum=source_checksum,
+                data_stage=data_stage,
+            )
+            revision.git_commit = binding.git_commit
+            revision.dvc_revision = binding.dvc_revision
+
+        repository.data_stage = data_stage
+        repository.updated_at = utcnow()
+        self.db.commit()
+        return get_revision(self.db, repository, revision_id, include_files=True)
+
+    def create_upload(
+        self,
+        namespace: str,
+        slug: str,
+        commit_message: str | None,
+        data_stage: str | None = None,
+        data_stage_provided: bool = False,
+    ) -> UploadSession:
+        repository = get_repository(self.db, namespace, slug)
+        if (
+            data_stage_provided
+            and data_stage != repository.data_stage
+            and latest_revision(self.db, repository.id) is not None
+            and not commit_message
+        ):
+            raise ValidationError(
+                "stage_commit_message_required",
+                "A commit message is required when an upload changes the data stage.",
+            )
         upload = UploadSession(
             repository_id=repository.id,
             commit_message=commit_message or "",
+            data_stage=data_stage,
+            data_stage_provided=data_stage_provided,
         )
         self.db.add(upload)
         self.db.commit()
@@ -672,7 +819,10 @@ class DatasetService:
         return parse_dataset_card(readme.read_bytes()) if readme else parse_dataset_card(b"")
 
     def _same_as_latest(
-        self, repository: DatasetRepository, file_entries: list[ManifestFile]
+        self,
+        repository: DatasetRepository,
+        file_entries: list[ManifestFile],
+        data_stage: str | None,
     ) -> DatasetRevision | None:
         latest = latest_revision(self.db, repository.id)
         if latest is None:
@@ -685,7 +835,7 @@ class DatasetService:
             for item in sorted(current, key=lambda x: x.path)
         ]
         new_tree = [(item.path, item.size_bytes, item.sha256) for item in file_entries]
-        return latest if old_tree == new_tree else None
+        return latest if old_tree == new_tree and latest.data_stage == data_stage else None
 
     @staticmethod
     def _source_object_set_checksum(file_entries: list[ManifestFile]) -> str:
@@ -751,7 +901,10 @@ class DatasetService:
                         path, local_path.stat().st_size, sha256, self._media_type(path), object_key
                     )
                 )
-            unchanged = self._same_as_latest(repository, entries)
+            revision_data_stage = (
+                upload.data_stage if upload.data_stage_provided else repository.data_stage
+            )
+            unchanged = self._same_as_latest(repository, entries, revision_data_stage)
             if unchanged:
                 upload.status = UploadStatus.complete
                 upload.revision_id = unchanged.revision_id
@@ -769,6 +922,7 @@ class DatasetService:
                 f"{repository.namespace}/{repository.slug}",
                 entries,
                 parent.revision_id if parent else None,
+                revision_data_stage,
             )
             revision_id = manifest_sha[:12]
             commit_message = upload.commit_message or revision_id
@@ -784,6 +938,7 @@ class DatasetService:
                 revision_id=revision_id,
                 branch=repository.default_branch,
                 commit_message=commit_message,
+                data_stage=revision_data_stage,
                 source_object_set_checksum=source_object_set_checksum,
                 manifest_object_key=manifest_key,
                 manifest_sha256=manifest_sha,
@@ -819,6 +974,7 @@ class DatasetService:
                     parent_revision_id=parent.revision_id if parent else None,
                     parent_git_commit=parent.git_commit if parent else None,
                     commit_message=commit_message,
+                    data_stage=revision_data_stage,
                     manifest_bytes=manifest_bytes,
                     manifest_sha256=manifest_sha,
                     source_object_set_checksum=source_object_set_checksum,
@@ -837,6 +993,7 @@ class DatasetService:
                 self.settings.staging_root / upload.id,
             )
             revision.status = RevisionStatus.ready
+            repository.data_stage = revision_data_stage
             repository.updated_at = utcnow()
             upload.status = UploadStatus.complete
             upload.revision_id = revision_id
