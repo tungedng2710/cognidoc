@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 
 import { AccountControls } from "../components/Auth";
 import { Brand } from "../components/Brand";
+import { UserSearch } from "../components/UserSearch";
 
 function CodeBlock({ children, label }: { children: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -66,6 +67,7 @@ export function ApiDocsPage() {
       <header className="app-header">
         <div className="app-header-bar page-shell">
           <Brand />
+          <UserSearch className="mx-4 hidden min-w-0 max-w-md flex-1 md:block" />
           <div className="flex items-center gap-2">
             <Link
               className="header-action"

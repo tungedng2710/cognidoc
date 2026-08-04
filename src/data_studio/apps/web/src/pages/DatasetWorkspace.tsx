@@ -40,6 +40,7 @@ import { AccountControls } from "../components/Auth";
 import { ApiGuideLink } from "../components/ApiGuideLink";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
+import { UserSearch } from "../components/UserSearch";
 import { DataTable } from "../components/DataTable";
 import { DatasetTags } from "../components/DatasetTags";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
@@ -894,6 +895,7 @@ export function DatasetWorkspace() {
       <header className="app-header">
         <div className="app-header-bar page-shell">
           <Brand />
+          <UserSearch className="mx-4 hidden min-w-0 max-w-md flex-1 md:block" />
           <div className="flex items-center gap-2">
             <Link className="header-action border-transparent shadow-none" to="/">
               <ChevronLeft className="size-4" />

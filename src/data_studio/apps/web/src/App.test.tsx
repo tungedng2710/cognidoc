@@ -40,6 +40,51 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");
   });
 
+  it("searches for users and opens a public profile", async () => {
+    const publicUser = {
+      username: "researcher",
+      display_name: "Vision Researcher",
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          json: () => Promise.resolve({ detail: "Sign in", status: 401 }),
+        });
+      }
+      if (url.includes("/auth/users?q=vision&limit=8")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ items: [publicUser] }),
+        });
+      }
+      if (url.endsWith("/auth/users/researcher")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(publicUser) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter><App /></MemoryRouter>);
+    fireEvent.change((await screen.findAllByRole("combobox", { name: "Search users" }))[0]!, {
+      target: { value: "vision" },
+    });
+    fireEvent.click(await screen.findByRole("link", { name: /Vision Researcher/ }));
+
+    expect(await screen.findByRole("heading", { name: "Vision Researcher" })).toBeInTheDocument();
+    expect(screen.getByText("researcher")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Repositories/ })).toHaveAttribute(
+      "href",
+      "/users/researcher/repositories",
+    );
+  });
+
   it("renders the API usage guide", async () => {
     render(<MemoryRouter initialEntries={["/docs/api"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Start using the API in minutes" })).toBeInTheDocument();
@@ -121,9 +166,9 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Account settings" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /Username/ })).toHaveAttribute("readonly");
     fireEvent.click(screen.getByRole("button", { name: "Open user menu" }));
-    expect(screen.getByRole("menuitem", { name: "My Datasets" })).toHaveAttribute(
+    expect(screen.getByRole("menuitem", { name: "Your profile" })).toHaveAttribute(
       "href",
-      "/users/owner/repositories",
+      "/users/owner",
     );
     expect(screen.getByRole("menuitem", { name: "User settings" })).toHaveAttribute(
       "href",
@@ -205,6 +250,9 @@ describe("App", () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
+      }
+      if (url.endsWith("/auth/users/owner")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(user) });
       }
       if (url.endsWith("/datasets?owner=owner")) {

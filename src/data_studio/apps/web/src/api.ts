@@ -6,6 +6,7 @@ import type {
   DatasetConfig,
   FilePage,
   Problem,
+  PublicUser,
   Revision,
   RevisionSummary,
   User,
@@ -108,6 +109,16 @@ export const api = {
   avatarUrl(username: string, version: string): string {
     const params = new URLSearchParams({ v: version });
     return `${API_ROOT}/auth/users/${encodeURIComponent(username)}/avatar?${params}`;
+  },
+
+  user(username: string): Promise<PublicUser> {
+    return request(`/auth/users/${encodeURIComponent(username)}`);
+  },
+
+  async searchUsers(query: string, limit = 8): Promise<PublicUser[]> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    const response = await request<{ items: PublicUser[] }>(`/auth/users?${params}`);
+    return response.items;
   },
 
   listTokens(): Promise<ApiToken[]> {

@@ -19,6 +19,7 @@ import { DatasetTags } from "../components/DatasetTags";
 import { normalizeDatasetSlug } from "../dataset-slug";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { StudioSelect } from "../components/StudioSelect";
+import { UserSearch } from "../components/UserSearch";
 import type { Dataset, Visibility } from "../types";
 
 const visibilityOptions = [
@@ -179,6 +180,7 @@ export function DatasetsPage() {
       <header className="app-header">
         <div className="app-header-bar page-shell">
           <Brand />
+          <UserSearch className="mx-4 hidden min-w-0 max-w-md flex-1 md:block" />
           <div className="flex items-center gap-2">
             <ApiGuideLink />
             <button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}>
@@ -189,6 +191,7 @@ export function DatasetsPage() {
         </div>
       </header>
       <main className="page-shell py-5 lg:py-6">
+        <UserSearch className="mb-4 md:hidden" />
         <section className="hero-panel px-6 py-5 sm:px-7 lg:py-6">
           <div className="pointer-events-none absolute -top-36 -right-28 size-96 rounded-full bg-indigo-200/40 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-40 left-1/3 size-80 rounded-full bg-cyan-200/30 blur-3xl" />

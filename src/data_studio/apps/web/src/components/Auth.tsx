@@ -1,9 +1,9 @@
 import {
   ChevronDown,
-  Database,
   LogIn,
   LogOut,
   Settings,
+  UserRound,
   UserPlus,
   X,
 } from "lucide-react";
@@ -244,11 +244,11 @@ export function AccountControls() {
           </div>
           <Link
             className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
-            to={`/users/${encodeURIComponent(user.username)}/repositories`}
+            to={`/users/${encodeURIComponent(user.username)}`}
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            <Database className="size-4" /> My Datasets
+            <UserRound className="size-4" /> Your profile
           </Link>
           <Link
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"

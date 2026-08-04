@@ -1,9 +1,9 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,10 +29,12 @@ from .schemas import (
     ApiTokenCreated,
     ApiTokenRead,
     PasswordChange,
+    PublicUserRead,
     UserLogin,
     UserProfileUpdate,
     UserRead,
     UserRegister,
+    UserSearchResults,
 )
 from .service import DatasetService
 from .storage import ObjectStorage
@@ -148,6 +150,39 @@ def logout(response: Response) -> Response:
 @router.get("/me", response_model=UserRead)
 def me(principal: CurrentPrincipal, db: Database) -> User:
     user = db.get(User, principal.user_id)
+    if user is None:
+        raise NotFoundError("User")
+    return user
+
+
+@router.get("/users", response_model=UserSearchResults)
+def search_users(
+    db: Database,
+    q: Annotated[str, Query(min_length=1, max_length=64)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> dict[str, list[User]]:
+    query = q.strip().lower()
+    if not query:
+        return {"items": []}
+    users = list(
+        db.scalars(
+            select(User)
+            .where(
+                or_(
+                    func.lower(User.username).contains(query, autoescape=True),
+                    func.lower(User.display_name).contains(query, autoescape=True),
+                )
+            )
+            .order_by(User.username)
+            .limit(limit)
+        ).all()
+    )
+    return {"items": users}
+
+
+@router.get("/users/{username}", response_model=PublicUserRead)
+def read_public_user(username: str, db: Database) -> User:
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
     if user is None:
         raise NotFoundError("User")
     return user

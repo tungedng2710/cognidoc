@@ -18,6 +18,7 @@ import { api } from "../api";
 import { AccountControls } from "../components/Auth";
 import { useAuth } from "../components/auth-context";
 import { Brand } from "../components/Brand";
+import { UserSearch } from "../components/UserSearch";
 import { LoadingState } from "../components/Feedback";
 import { UserAvatar } from "../components/UserAvatar";
 import type { ApiToken, ApiTokenCreated } from "../types";
@@ -464,6 +465,7 @@ export function AccountSettingsPage() {
       <header className="app-header">
         <div className="app-header-bar page-shell">
           <Brand />
+          <UserSearch className="mx-4 hidden min-w-0 max-w-md flex-1 md:block" />
           <div className="flex items-center gap-2">
             <Link
               className="header-action"

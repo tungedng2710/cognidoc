@@ -49,6 +49,13 @@ export interface User {
   created_at: string;
 }
 
+export interface PublicUser {
+  username: string;
+  display_name: string;
+  avatar_updated_at: string | null;
+  created_at: string;
+}
+
 export interface ApiToken {
   id: string;
   name: string;

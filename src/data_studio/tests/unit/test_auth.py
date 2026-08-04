@@ -295,3 +295,46 @@ def test_dataset_list_can_be_filtered_by_repository_owner(client: TestClient) ->
     second_items = client.get("/api/v1/datasets?owner=second").json()["items"]
     assert [item["slug"] for item in owner_items] == ["first"]
     assert [item["slug"] for item in second_items] == ["second"]
+
+
+def test_users_can_be_searched_and_public_profiles_hide_private_fields(
+    client: TestClient,
+) -> None:
+    assert (
+        client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "owner",
+                "display_name": "Dataset Owner",
+                "email": "owner@example.com",
+                "password": "secure-password",
+            },
+        ).status_code
+        == 201
+    )
+    client.post("/api/v1/auth/logout")
+    assert (
+        client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "researcher",
+                "display_name": "Vision Researcher",
+                "email": "researcher@example.com",
+                "password": "secure-password",
+            },
+        ).status_code
+        == 201
+    )
+    client.post("/api/v1/auth/logout")
+
+    search = client.get("/api/v1/auth/users?q=vision")
+    assert search.status_code == 200
+    assert [item["username"] for item in search.json()["items"]] == ["researcher"]
+    assert "email" not in search.json()["items"][0]
+    assert "is_admin" not in search.json()["items"][0]
+
+    profile = client.get("/api/v1/auth/users/OWNER")
+    assert profile.status_code == 200
+    assert profile.json()["display_name"] == "Dataset Owner"
+    assert "email" not in profile.json()
+    assert client.get("/api/v1/auth/users/missing-user").status_code == 404

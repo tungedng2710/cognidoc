@@ -190,6 +190,17 @@ class UserRead(OrmModel):
     created_at: datetime
 
 
+class PublicUserRead(OrmModel):
+    username: str
+    display_name: str
+    avatar_updated_at: datetime | None
+    created_at: datetime
+
+
+class UserSearchResults(BaseModel):
+    items: list[PublicUserRead]
+
+
 class UserProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

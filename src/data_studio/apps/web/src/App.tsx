@@ -14,6 +14,7 @@ export function App() {
         <Route path="/" element={<DatasetsPage />} />
         <Route path="/docs/api" element={<ApiDocsPage />} />
         <Route path="/settings" element={<AccountSettingsPage />} />
+        <Route path="/users/:username" element={<UserRepositoriesPage />} />
         <Route path="/users/:username/repositories" element={<UserRepositoriesPage />} />
         <Route path="/datasets/:namespace/:dataset/*" element={<DatasetWorkspace />} />
       </Routes>

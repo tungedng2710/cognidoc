@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
-import type { User } from "../types";
+import type { PublicUser } from "../types";
 
 export function UserAvatar({
   user,
   className = "size-8",
 }: {
-  user: User;
+  user: PublicUser;
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
