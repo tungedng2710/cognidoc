@@ -12,6 +12,7 @@ from .auth import (
     Principal,
     authenticate_user,
     create_session_token,
+    get_optional_principal,
     get_principal,
     hash_api_token,
     hash_password,
@@ -22,7 +23,7 @@ from .auth import (
 from .config import Settings, get_settings
 from .database import get_db
 from .errors import ConflictError, NotFoundError, StudioError
-from .models import ApiToken, DatasetRepository, User, utcnow
+from .models import ApiToken, DatasetRepository, User, UserFollow, utcnow
 from .schemas import (
     AccountDelete,
     ApiTokenCreate,
@@ -43,6 +44,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 Database = Annotated[Session, Depends(get_db)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
+OptionalPrincipal = Annotated[Principal | None, Depends(get_optional_principal)]
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 
 
@@ -91,6 +93,39 @@ def _avatar_file_type(content: bytes) -> tuple[str, str]:
         "Unsupported image",
         "Use a PNG, JPEG, or WebP image.",
     )
+
+
+def _public_user_payload(
+    db: Session,
+    user: User,
+    principal: Principal | None,
+) -> dict[str, object]:
+    followers_count = db.scalar(
+        select(func.count()).select_from(UserFollow).where(UserFollow.followed_id == user.id)
+    )
+    following_count = db.scalar(
+        select(func.count()).select_from(UserFollow).where(UserFollow.follower_id == user.id)
+    )
+    is_following = False
+    if principal is not None and principal.user_id != user.id:
+        is_following = (
+            db.scalar(
+                select(UserFollow.follower_id).where(
+                    UserFollow.follower_id == principal.user_id,
+                    UserFollow.followed_id == user.id,
+                )
+            )
+            is not None
+        )
+    return {
+        "username": user.username,
+        "display_name": user.display_name,
+        "avatar_updated_at": user.avatar_updated_at,
+        "created_at": user.created_at,
+        "followers_count": followers_count or 0,
+        "following_count": following_count or 0,
+        "is_following": is_following,
+    }
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
@@ -158,9 +193,10 @@ def me(principal: CurrentPrincipal, db: Database) -> User:
 @router.get("/users", response_model=UserSearchResults)
 def search_users(
     db: Database,
+    principal: OptionalPrincipal,
     q: Annotated[str, Query(min_length=1, max_length=64)],
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
-) -> dict[str, list[User]]:
+) -> dict[str, list[dict[str, object]]]:
     query = q.strip().lower()
     if not query:
         return {"items": []}
@@ -177,15 +213,60 @@ def search_users(
             .limit(limit)
         ).all()
     )
-    return {"items": users}
+    return {"items": [_public_user_payload(db, user, principal) for user in users]}
 
 
 @router.get("/users/{username}", response_model=PublicUserRead)
-def read_public_user(username: str, db: Database) -> User:
+def read_public_user(
+    username: str,
+    db: Database,
+    principal: OptionalPrincipal,
+) -> dict[str, object]:
     user = db.scalar(select(User).where(User.username == username.strip().lower()))
     if user is None:
         raise NotFoundError("User")
-    return user
+    return _public_user_payload(db, user, principal)
+
+
+@router.put("/users/{username}/follow", response_model=PublicUserRead)
+def follow_user(
+    username: str,
+    principal: CurrentPrincipal,
+    db: Database,
+) -> dict[str, object]:
+    require_scope(principal, "write")
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise NotFoundError("User")
+    if user.id == principal.user_id:
+        raise StudioError(
+            422,
+            "cannot_follow_self",
+            "Cannot follow yourself",
+            "Choose another user to follow.",
+        )
+    key = (principal.user_id, user.id)
+    if db.get(UserFollow, key) is None:
+        db.add(UserFollow(follower_id=principal.user_id, followed_id=user.id))
+        db.commit()
+    return _public_user_payload(db, user, principal)
+
+
+@router.delete("/users/{username}/follow", response_model=PublicUserRead)
+def unfollow_user(
+    username: str,
+    principal: CurrentPrincipal,
+    db: Database,
+) -> dict[str, object]:
+    require_scope(principal, "write")
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise NotFoundError("User")
+    follow = db.get(UserFollow, (principal.user_id, user.id))
+    if follow is not None:
+        db.delete(follow)
+        db.commit()
+    return _public_user_payload(db, user, principal)
 
 
 @router.patch("/me", response_model=UserRead)
@@ -375,6 +456,11 @@ def delete_account(
 
     if user.avatar_object_key:
         storage.delete_objects([user.avatar_object_key])
+    db.execute(
+        delete(UserFollow).where(
+            or_(UserFollow.follower_id == user.id, UserFollow.followed_id == user.id)
+        )
+    )
     db.execute(delete(ApiToken).where(ApiToken.user_id == user.id))
     db.delete(user)
     db.commit()

@@ -356,6 +356,55 @@ def test_users_can_be_searched_and_public_profiles_hide_private_fields(
     assert client.get("/api/v1/auth/users/missing-user").status_code == 404
 
 
+def test_users_can_follow_and_unfollow_other_users(client: TestClient) -> None:
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 201
+    client.post("/api/v1/auth/logout")
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "researcher", "password": "secure-password"},
+    ).status_code == 201
+
+    initial = client.get("/api/v1/auth/users/owner")
+    assert initial.status_code == 200
+    assert initial.json()["followers_count"] == 0
+    assert initial.json()["following_count"] == 0
+    assert initial.json()["is_following"] is False
+
+    followed = client.put("/api/v1/auth/users/owner/follow")
+    assert followed.status_code == 200, followed.text
+    assert followed.json()["followers_count"] == 1
+    assert followed.json()["is_following"] is True
+
+    repeated = client.put("/api/v1/auth/users/owner/follow")
+    assert repeated.status_code == 200
+    assert repeated.json()["followers_count"] == 1
+
+    search_result = client.get("/api/v1/auth/users?q=owner").json()["items"][0]
+    assert search_result["followers_count"] == 1
+    assert search_result["is_following"] is True
+
+    own_profile = client.get("/api/v1/auth/users/researcher")
+    assert own_profile.json()["following_count"] == 1
+    assert own_profile.json()["is_following"] is False
+
+    self_follow = client.put("/api/v1/auth/users/researcher/follow")
+    assert self_follow.status_code == 422
+    assert self_follow.json()["code"] == "cannot_follow_self"
+
+    unfollowed = client.delete("/api/v1/auth/users/owner/follow")
+    assert unfollowed.status_code == 200
+    assert unfollowed.json()["followers_count"] == 0
+    assert unfollowed.json()["is_following"] is False
+    assert client.delete("/api/v1/auth/users/owner/follow").status_code == 200
+
+    client.post("/api/v1/auth/logout")
+    anonymous = client.put("/api/v1/auth/users/owner/follow")
+    assert anonymous.status_code == 401
+
+
 def test_dataset_search_only_returns_repositories_visible_to_the_visitor(
     client: TestClient,
 ) -> None:

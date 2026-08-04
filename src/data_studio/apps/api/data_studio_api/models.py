@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -68,6 +69,21 @@ class User(Base):
     api_tokens: Mapped[list["ApiToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class UserFollow(Base):
+    __tablename__ = "user_follows"
+    __table_args__ = (
+        CheckConstraint("follower_id != followed_id", name="ck_user_follows_not_self"),
+    )
+
+    follower_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    followed_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ApiToken(Base):

@@ -198,6 +198,9 @@ class PublicUserRead(OrmModel):
     display_name: str
     avatar_updated_at: datetime | None
     created_at: datetime
+    followers_count: int = 0
+    following_count: int = 0
+    is_following: bool = False
 
 
 class UserSearchResults(BaseModel):

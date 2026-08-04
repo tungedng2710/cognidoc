@@ -346,6 +346,68 @@ describe("App", () => {
     );
   });
 
+  it("lets a signed-in user follow and unfollow another user", async () => {
+    const currentUser = {
+      id: "viewer-id",
+      username: "viewer",
+      display_name: "Viewer",
+      email: null,
+      is_admin: false,
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+    };
+    let isFollowing = false;
+    const profile = () => ({
+      username: "researcher",
+      display_name: "Vision Researcher",
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+      followers_count: isFollowing ? 4 : 3,
+      following_count: 8,
+      is_following: isFollowing,
+    });
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(currentUser) });
+      }
+      if (url.endsWith("/auth/users/researcher/follow")) {
+        isFollowing = init?.method === "PUT";
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(profile()) });
+      }
+      if (url.endsWith("/auth/users/researcher")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(profile()) });
+      }
+      if (url.endsWith("/datasets?owner=researcher")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/users/researcher"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Follow" }));
+    expect(await screen.findByRole("button", { name: "Following" })).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/users/researcher/follow",
+      expect.objectContaining({ method: "PUT", credentials: "include" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Following" }));
+    expect(await screen.findByRole("button", { name: "Follow" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/users/researcher/follow",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+  });
+
   it("highlights the active workspace tab", async () => {
     const createdAt = "2026-07-22T08:00:00Z";
     const longDescription = "A detailed dataset description ".repeat(20).trim();

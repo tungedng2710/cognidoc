@@ -115,6 +115,14 @@ export const api = {
     return request(`/auth/users/${encodeURIComponent(username)}`);
   },
 
+  followUser(username: string): Promise<PublicUser> {
+    return request(`/auth/users/${encodeURIComponent(username)}/follow`, { method: "PUT" });
+  },
+
+  unfollowUser(username: string): Promise<PublicUser> {
+    return request(`/auth/users/${encodeURIComponent(username)}/follow`, { method: "DELETE" });
+  },
+
   async searchUsers(query: string, limit = 8): Promise<PublicUser[]> {
     const params = new URLSearchParams({ q: query, limit: String(limit) });
     const response = await request<{ items: PublicUser[] }>(`/auth/users?${params}`);

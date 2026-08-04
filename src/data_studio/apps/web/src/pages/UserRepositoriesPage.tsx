@@ -6,6 +6,9 @@ import {
   Database,
   Search,
   Settings,
+  UserCheck,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
@@ -102,10 +105,12 @@ export function UserRepositoriesPage() {
   const { username = "" } = useParams();
   const profileUsername = username.toLowerCase();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, openAuth } = useAuth();
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [datasets, setDatasets] = useState<Dataset[] | null>(null);
   const [error, setError] = useState("");
+  const [followError, setFollowError] = useState("");
+  const [followSaving, setFollowSaving] = useState(false);
   const [query, setQuery] = useState("");
   const repositoriesActive = location.pathname.endsWith("/repositories");
 
@@ -113,6 +118,7 @@ export function UserRepositoriesPage() {
     setProfile(null);
     setDatasets(null);
     setError("");
+    setFollowError("");
     void Promise.all([api.user(profileUsername), api.listDatasets(profileUsername)])
       .then(([nextProfile, nextDatasets]) => {
         setProfile(nextProfile);
@@ -123,7 +129,27 @@ export function UserRepositoriesPage() {
       });
   };
 
-  useEffect(load, [profileUsername]);
+  useEffect(load, [profileUsername, user?.id]);
+
+  const toggleFollow = async () => {
+    if (!profile) return;
+    if (!user) {
+      openAuth("login");
+      return;
+    }
+    setFollowSaving(true);
+    setFollowError("");
+    try {
+      const updated = profile.is_following
+        ? await api.unfollowUser(profile.username)
+        : await api.followUser(profile.username);
+      setProfile(updated);
+    } catch (caught) {
+      setFollowError(caught instanceof Error ? caught.message : "Could not update this follow.");
+    } finally {
+      setFollowSaving(false);
+    }
+  };
 
   const filtered = datasets?.filter((dataset) =>
     [
@@ -210,7 +236,28 @@ export function UserRepositoriesPage() {
                   <Link className="button-secondary mt-4 w-full" to="/settings">
                     <Settings className="size-4" /> Edit profile
                   </Link>
+                ) : (
+                  <button
+                    className={profile.is_following ? "button-secondary mt-4 w-full" : "button-primary mt-4 w-full"}
+                    disabled={followSaving}
+                    type="button"
+                    onClick={() => void toggleFollow()}
+                  >
+                    {profile.is_following ? <UserCheck className="size-4" /> : <UserPlus className="size-4" />}
+                    {followSaving ? "Saving…" : profile.is_following ? "Following" : "Follow"}
+                  </button>
+                )}
+                {followError ? (
+                  <p className="mt-2 text-sm font-medium text-rose-700">{followError}</p>
                 ) : null}
+                <p className="mt-4 flex flex-wrap items-center gap-1.5 text-sm text-slate-600">
+                  <Users className="size-4 text-slate-400" />
+                  <span className="font-semibold text-slate-900">{profile.followers_count ?? 0}</span>
+                  followers
+                  <span aria-hidden="true">·</span>
+                  <span className="font-semibold text-slate-900">{profile.following_count ?? 0}</span>
+                  following
+                </p>
                 <p className="mt-5 flex items-center gap-2 text-sm text-slate-600">
                   <CalendarDays className="size-4 text-slate-400" /> Joined {formatJoined(profile.created_at)}
                 </p>

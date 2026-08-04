@@ -7,7 +7,7 @@ export function UserAvatar({
   user,
   className = "size-8",
 }: {
-  user: PublicUser;
+  user: Pick<PublicUser, "username" | "display_name" | "avatar_updated_at">;
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
