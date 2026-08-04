@@ -78,6 +78,22 @@ def test_first_registration_adopts_existing_datasets_and_login_sets_cookie(
         assert create_session_token(logged_in, settings).count(".") == 1
 
 
+def test_registration_accepts_blank_optional_profile_fields(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "new-user",
+            "display_name": "",
+            "email": "",
+            "password": "secure-password",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["display_name"] == "new-user"
+    assert response.json()["email"] is None
+
+
 def test_repository_access_is_public_read_and_owner_write() -> None:
     owner = Principal("owner-id", "owner", False, frozenset({"read", "write"}), "session")
     stranger = Principal("stranger-id", "stranger", False, frozenset({"read", "write"}), "session")

@@ -161,7 +161,7 @@ class DatasetRead(OrmModel):
 class UserRegister(BaseModel):
     username: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")
     display_name: str = Field(default="", max_length=120)
-    email: str | None = Field(default=None, min_length=3, max_length=320)
+    email: str | None = Field(default=None, max_length=320)
     password: str = Field(min_length=8, max_length=128)
 
     @field_validator("email")
@@ -170,6 +170,8 @@ class UserRegister(BaseModel):
         if email is None:
             return None
         normalized = email.strip().lower()
+        if not normalized:
+            return None
         if normalized.count("@") != 1 or normalized.startswith("@") or normalized.endswith("@"):
             raise ValueError("email must be a valid address")
         return normalized
