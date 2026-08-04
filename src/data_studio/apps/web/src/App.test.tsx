@@ -411,6 +411,10 @@ describe("App", () => {
     expect(await screen.findByText("Repository files")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dataset card" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "research" })).toHaveAttribute(
+      "href",
+      "/users/research",
+    );
     expect(screen.getByText("Raw Validated")).toBeInTheDocument();
     expect(screen.getByText("ocr")).toBeInTheDocument();
     expect(screen.getByText("images")).toBeInTheDocument();

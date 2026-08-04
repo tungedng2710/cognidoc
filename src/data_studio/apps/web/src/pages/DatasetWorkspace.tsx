@@ -914,7 +914,20 @@ export function DatasetWorkspace() {
                 <div className="flex items-center gap-3">
                   <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-md shadow-indigo-950/15"><Database className="size-4.5" /></span>
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-slate-500">{namespace} /</p>
+                    <p className="truncate text-xs font-medium text-slate-500">
+                      {repository.owner ? (
+                        <Link
+                          className="transition hover:text-indigo-600 hover:underline"
+                          title={`View @${repository.owner}'s profile`}
+                          to={`/users/${encodeURIComponent(repository.owner)}`}
+                        >
+                          {repository.owner}
+                        </Link>
+                      ) : (
+                        namespace
+                      )}{" "}
+                      /
+                    </p>
                     <h1 className="truncate text-2xl font-semibold tracking-[-0.035em] text-slate-950">{dataset}</h1>
                     <DatasetTags
                       className="mt-1.5"
