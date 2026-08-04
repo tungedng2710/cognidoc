@@ -7,6 +7,7 @@ import type {
   FilePage,
   Problem,
   PublicUser,
+  PublicUserPage,
   Revision,
   RevisionSummary,
   User,
@@ -121,6 +122,16 @@ export const api = {
 
   unfollowUser(username: string): Promise<PublicUser> {
     return request(`/auth/users/${encodeURIComponent(username)}/follow`, { method: "DELETE" });
+  },
+
+  followers(username: string, offset = 0, limit = 50): Promise<PublicUserPage> {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    return request(`/auth/users/${encodeURIComponent(username)}/followers?${params}`);
+  },
+
+  following(username: string, offset = 0, limit = 50): Promise<PublicUserPage> {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    return request(`/auth/users/${encodeURIComponent(username)}/following?${params}`);
   },
 
   async searchUsers(query: string, limit = 8): Promise<PublicUser[]> {

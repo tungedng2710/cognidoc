@@ -22,7 +22,7 @@ import { DatasetTags } from "../components/DatasetTags";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { UserAvatar } from "../components/UserAvatar";
 import { UserSearch } from "../components/UserSearch";
-import type { Dataset, PublicUser } from "../types";
+import type { Dataset, PublicUser, PublicUserPage } from "../types";
 
 function formatJoined(date: string): string {
   const joined = new Date(date);
@@ -101,6 +101,104 @@ function RepositoryRow({ dataset }: { dataset: Dataset }) {
   );
 }
 
+function ProfilePeopleList({
+  emptyDescription,
+  people,
+  savingUsername,
+  title,
+  viewerUsername,
+  onPage,
+  onToggle,
+}: {
+  emptyDescription: string;
+  people: PublicUserPage;
+  savingUsername: string | null;
+  title: string;
+  viewerUsername: string | null;
+  onPage: (offset: number) => void;
+  onToggle: (candidate: PublicUser) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+      <div className="border-b border-slate-200 px-5 py-4">
+        <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          {people.total} {people.total === 1 ? "user" : "users"}
+        </p>
+      </div>
+      {people.items.length ? (
+        <div>
+          {people.items.map((candidate) => (
+            <article
+              className="flex items-center gap-4 border-b border-slate-200 px-5 py-5 last:border-0"
+              key={candidate.username}
+            >
+              <Link to={`/users/${encodeURIComponent(candidate.username)}`}>
+                <UserAvatar className="size-12 text-lg" user={candidate} />
+              </Link>
+              <div className="min-w-0 flex-1">
+                <Link
+                  className="font-semibold text-slate-950 hover:text-indigo-700 hover:underline"
+                  to={`/users/${encodeURIComponent(candidate.username)}`}
+                >
+                  {candidate.display_name || candidate.username}
+                </Link>
+                <p className="truncate text-sm text-slate-500">@{candidate.username}</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {candidate.followers_count} {candidate.followers_count === 1 ? "follower" : "followers"}
+                </p>
+              </div>
+              {viewerUsername !== candidate.username ? (
+                <button
+                  aria-label={`${candidate.is_following ? "Unfollow" : "Follow"} ${candidate.username}`}
+                  className="button-secondary min-w-24"
+                  disabled={savingUsername === candidate.username}
+                  type="button"
+                  onClick={() => onToggle(candidate)}
+                >
+                  {candidate.is_following ? <UserCheck className="size-4" /> : <UserPlus className="size-4" />}
+                  {savingUsername === candidate.username
+                    ? "Saving…"
+                    : candidate.is_following
+                      ? "Following"
+                      : "Follow"}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No users yet" description={emptyDescription} />
+      )}
+      {people.total > people.limit ? (
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4">
+          <span className="text-xs text-slate-500">
+            Showing {people.offset + 1}–{people.offset + people.items.length} of {people.total}
+          </span>
+          <div className="flex gap-2">
+            <button
+              className="button-secondary min-h-9 px-3"
+              disabled={people.offset === 0}
+              type="button"
+              onClick={() => onPage(Math.max(0, people.offset - people.limit))}
+            >
+              <ArrowLeft className="size-4" /> Previous
+            </button>
+            <button
+              className="button-secondary min-h-9 px-3"
+              disabled={people.offset + people.items.length >= people.total}
+              type="button"
+              onClick={() => onPage(people.offset + people.limit)}
+            >
+              Next <ArrowRight className="size-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function UserRepositoriesPage() {
   const { username = "" } = useParams();
   const profileUsername = username.toLowerCase();
@@ -108,28 +206,44 @@ export function UserRepositoriesPage() {
   const { user, openAuth } = useAuth();
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [datasets, setDatasets] = useState<Dataset[] | null>(null);
+  const [people, setPeople] = useState<PublicUserPage | null>(null);
   const [error, setError] = useState("");
   const [followError, setFollowError] = useState("");
   const [followSaving, setFollowSaving] = useState(false);
+  const [personSaving, setPersonSaving] = useState<string | null>(null);
+  const [peopleOffset, setPeopleOffset] = useState(0);
   const [query, setQuery] = useState("");
   const repositoriesActive = location.pathname.endsWith("/repositories");
+  const socialView = location.pathname.endsWith("/followers")
+    ? "followers"
+    : location.pathname.endsWith("/following")
+      ? "following"
+      : null;
 
   const load = () => {
     setProfile(null);
     setDatasets(null);
+    setPeople(null);
     setError("");
     setFollowError("");
-    void Promise.all([api.user(profileUsername), api.listDatasets(profileUsername)])
-      .then(([nextProfile, nextDatasets]) => {
+    const peopleRequest = socialView === "followers"
+      ? api.followers(profileUsername, peopleOffset)
+      : socialView === "following"
+        ? api.following(profileUsername, peopleOffset)
+        : Promise.resolve({ items: [], total: 0, offset: 0, limit: 50 });
+    void Promise.all([api.user(profileUsername), api.listDatasets(profileUsername), peopleRequest])
+      .then(([nextProfile, nextDatasets, nextPeople]) => {
         setProfile(nextProfile);
         setDatasets(nextDatasets.filter((dataset) => dataset.owner === profileUsername));
+        setPeople(nextPeople);
       })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : "Could not load this profile.");
       });
   };
 
-  useEffect(load, [profileUsername, user?.id]);
+  useEffect(() => setPeopleOffset(0), [profileUsername, socialView]);
+  useEffect(load, [peopleOffset, profileUsername, socialView, user?.id]);
 
   const toggleFollow = async () => {
     if (!profile) return;
@@ -144,10 +258,50 @@ export function UserRepositoriesPage() {
         ? await api.unfollowUser(profile.username)
         : await api.followUser(profile.username);
       setProfile(updated);
+      if (socialView === "followers") {
+        setPeople(await api.followers(profileUsername, peopleOffset));
+      }
     } catch (caught) {
       setFollowError(caught instanceof Error ? caught.message : "Could not update this follow.");
     } finally {
       setFollowSaving(false);
+    }
+  };
+
+  const toggleListedUser = async (candidate: PublicUser) => {
+    if (!user) {
+      openAuth("login");
+      return;
+    }
+    setPersonSaving(candidate.username);
+    setFollowError("");
+    try {
+      const updated = candidate.is_following
+        ? await api.unfollowUser(candidate.username)
+        : await api.followUser(candidate.username);
+      setPeople((current) => current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.username === updated.username ? updated : item,
+            ),
+          }
+        : current);
+      if (isCurrentUser && socialView === "following") {
+        setProfile((current) => current
+          ? {
+              ...current,
+              following_count: Math.max(
+                0,
+                current.following_count + (updated.is_following ? 1 : -1),
+              ),
+            }
+          : current);
+      }
+    } catch (caught) {
+      setFollowError(caught instanceof Error ? caught.message : "Could not update this follow.");
+    } finally {
+      setPersonSaving(null);
     }
   };
 
@@ -187,7 +341,7 @@ export function UserRepositoriesPage() {
         <main className="page-shell py-16">
           <ErrorState message={error} retry={load} />
         </main>
-      ) : !profile || datasets === null ? (
+      ) : !profile || datasets === null || people === null ? (
         <main className="page-shell py-16">
           <LoadingState label="Loading profile…" />
         </main>
@@ -201,7 +355,7 @@ export function UserRepositoriesPage() {
                 className="flex gap-1 overflow-x-auto md:pl-[calc(296px+2rem)]"
               >
                 <Link
-                  className={`tab-link ${repositoriesActive ? "" : "tab-link-active"}`}
+                  className={`tab-link ${!repositoriesActive && !socialView ? "tab-link-active" : ""}`}
                   to={`/users/${encodeURIComponent(username)}`}
                 >
                   <BookOpen className="size-4" /> Overview
@@ -250,21 +404,43 @@ export function UserRepositoriesPage() {
                 {followError ? (
                   <p className="mt-2 text-sm font-medium text-rose-700">{followError}</p>
                 ) : null}
-                <p className="mt-4 flex flex-wrap items-center gap-1.5 text-sm text-slate-600">
+                <div className="mt-4 flex flex-wrap items-center gap-1.5 text-sm text-slate-600">
                   <Users className="size-4 text-slate-400" />
-                  <span className="font-semibold text-slate-900">{profile.followers_count ?? 0}</span>
-                  followers
+                  <Link
+                    className="hover:text-indigo-700 hover:underline"
+                    to={`/users/${encodeURIComponent(username)}/followers`}
+                  >
+                    <span className="font-semibold text-slate-900">{profile.followers_count ?? 0}</span>{" "}
+                    followers
+                  </Link>
                   <span aria-hidden="true">·</span>
-                  <span className="font-semibold text-slate-900">{profile.following_count ?? 0}</span>
-                  following
-                </p>
+                  <Link
+                    className="hover:text-indigo-700 hover:underline"
+                    to={`/users/${encodeURIComponent(username)}/following`}
+                  >
+                    <span className="font-semibold text-slate-900">{profile.following_count ?? 0}</span>{" "}
+                    following
+                  </Link>
+                </div>
                 <p className="mt-5 flex items-center gap-2 text-sm text-slate-600">
                   <CalendarDays className="size-4 text-slate-400" /> Joined {formatJoined(profile.created_at)}
                 </p>
               </aside>
 
               <section className="min-w-0">
-                {repositoriesActive ? (
+                {socialView ? (
+                  <ProfilePeopleList
+                    emptyDescription={socialView === "followers"
+                      ? `@${username} does not have any followers yet.`
+                      : `@${username} is not following anyone yet.`}
+                    people={people}
+                    savingUsername={personSaving}
+                    title={socialView === "followers" ? "Followers" : "Following"}
+                    viewerUsername={user?.username ?? null}
+                    onPage={setPeopleOffset}
+                    onToggle={(candidate) => void toggleListedUser(candidate)}
+                  />
+                ) : repositoriesActive ? (
                   <>
                     <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
                       <div>

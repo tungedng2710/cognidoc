@@ -16,6 +16,8 @@ export function App() {
         <Route path="/settings" element={<AccountSettingsPage />} />
         <Route path="/users/:username" element={<UserRepositoriesPage />} />
         <Route path="/users/:username/repositories" element={<UserRepositoriesPage />} />
+        <Route path="/users/:username/followers" element={<UserRepositoriesPage />} />
+        <Route path="/users/:username/following" element={<UserRepositoriesPage />} />
         <Route path="/datasets/:namespace/:dataset/*" element={<DatasetWorkspace />} />
       </Routes>
     </AuthProvider>

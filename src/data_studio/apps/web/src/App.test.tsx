@@ -408,6 +408,89 @@ describe("App", () => {
     );
   });
 
+  it("shows a user's followers and allows following from the list", async () => {
+    const currentUser = {
+      id: "viewer-id",
+      username: "viewer",
+      display_name: "Viewer",
+      email: null,
+      is_admin: false,
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+    };
+    const profile = {
+      username: "researcher",
+      display_name: "Vision Researcher",
+      avatar_updated_at: null,
+      created_at: "2026-07-22T08:00:00Z",
+      followers_count: 1,
+      following_count: 2,
+      is_following: false,
+    };
+    let followsCollaborator = false;
+    const collaborator = () => ({
+      username: "collaborator",
+      display_name: "Data Collaborator",
+      avatar_updated_at: null,
+      created_at: "2026-07-23T08:00:00Z",
+      followers_count: followsCollaborator ? 6 : 5,
+      following_count: 3,
+      is_following: followsCollaborator,
+    });
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(currentUser) });
+      }
+      if (url.endsWith("/auth/users/researcher")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(profile) });
+      }
+      if (url.includes("/auth/users/researcher/followers?offset=0&limit=50")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ items: [collaborator()], total: 1, offset: 0, limit: 50 }),
+        });
+      }
+      if (url.endsWith("/auth/users/collaborator/follow")) {
+        followsCollaborator = init?.method === "PUT";
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(collaborator()) });
+      }
+      if (url.endsWith("/datasets?owner=researcher")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/users/researcher/followers"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Followers" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Data Collaborator" })).toHaveAttribute(
+      "href",
+      "/users/collaborator",
+    );
+    expect(screen.getByRole("link", { name: /1 followers/ })).toHaveAttribute(
+      "href",
+      "/users/researcher/followers",
+    );
+    expect(screen.getByRole("link", { name: /2 following/ })).toHaveAttribute(
+      "href",
+      "/users/researcher/following",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow collaborator" }));
+    expect(await screen.findByRole("button", { name: "Unfollow collaborator" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/users/collaborator/follow",
+      expect.objectContaining({ method: "PUT", credentials: "include" }),
+    );
+  });
+
   it("highlights the active workspace tab", async () => {
     const createdAt = "2026-07-22T08:00:00Z";
     const longDescription = "A detailed dataset description ".repeat(20).trim();

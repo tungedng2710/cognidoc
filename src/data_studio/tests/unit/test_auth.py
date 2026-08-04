@@ -386,6 +386,17 @@ def test_users_can_follow_and_unfollow_other_users(client: TestClient) -> None:
     assert search_result["followers_count"] == 1
     assert search_result["is_following"] is True
 
+    followers = client.get("/api/v1/auth/users/owner/followers?offset=0&limit=10")
+    assert followers.status_code == 200
+    assert followers.json()["total"] == 1
+    assert [item["username"] for item in followers.json()["items"]] == ["researcher"]
+
+    following = client.get("/api/v1/auth/users/researcher/following?offset=0&limit=10")
+    assert following.status_code == 200
+    assert following.json()["total"] == 1
+    assert [item["username"] for item in following.json()["items"]] == ["owner"]
+    assert following.json()["items"][0]["is_following"] is True
+
     own_profile = client.get("/api/v1/auth/users/researcher")
     assert own_profile.json()["following_count"] == 1
     assert own_profile.json()["is_following"] is False
@@ -403,6 +414,7 @@ def test_users_can_follow_and_unfollow_other_users(client: TestClient) -> None:
     client.post("/api/v1/auth/logout")
     anonymous = client.put("/api/v1/auth/users/owner/follow")
     assert anonymous.status_code == 401
+    assert client.get("/api/v1/auth/users/missing-user/followers").status_code == 404
 
 
 def test_dataset_search_only_returns_repositories_visible_to_the_visitor(

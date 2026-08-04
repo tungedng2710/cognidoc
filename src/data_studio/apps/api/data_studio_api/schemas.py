@@ -203,6 +203,13 @@ class PublicUserRead(OrmModel):
     is_following: bool = False
 
 
+class PublicUserList(BaseModel):
+    items: list[PublicUserRead]
+    total: int
+    offset: int
+    limit: int
+
+
 class UserSearchResults(BaseModel):
     items: list[PublicUserRead]
 

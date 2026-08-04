@@ -60,6 +60,13 @@ export interface PublicUser {
   is_following: boolean;
 }
 
+export interface PublicUserPage {
+  items: PublicUser[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface ApiToken {
   id: string;
   name: string;

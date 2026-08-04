@@ -30,6 +30,7 @@ from .schemas import (
     ApiTokenCreated,
     ApiTokenRead,
     PasswordChange,
+    PublicUserList,
     PublicUserRead,
     UserLogin,
     UserProfileUpdate,
@@ -226,6 +227,70 @@ def read_public_user(
     if user is None:
         raise NotFoundError("User")
     return _public_user_payload(db, user, principal)
+
+
+@router.get("/users/{username}/followers", response_model=PublicUserList)
+def list_followers(
+    username: str,
+    db: Database,
+    principal: OptionalPrincipal,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict[str, object]:
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise NotFoundError("User")
+    total = db.scalar(
+        select(func.count()).select_from(UserFollow).where(UserFollow.followed_id == user.id)
+    )
+    users = list(
+        db.scalars(
+            select(User)
+            .join(UserFollow, UserFollow.follower_id == User.id)
+            .where(UserFollow.followed_id == user.id)
+            .order_by(User.username)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+    return {
+        "items": [_public_user_payload(db, item, principal) for item in users],
+        "total": total or 0,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.get("/users/{username}/following", response_model=PublicUserList)
+def list_following(
+    username: str,
+    db: Database,
+    principal: OptionalPrincipal,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict[str, object]:
+    user = db.scalar(select(User).where(User.username == username.strip().lower()))
+    if user is None:
+        raise NotFoundError("User")
+    total = db.scalar(
+        select(func.count()).select_from(UserFollow).where(UserFollow.follower_id == user.id)
+    )
+    users = list(
+        db.scalars(
+            select(User)
+            .join(UserFollow, UserFollow.followed_id == User.id)
+            .where(UserFollow.follower_id == user.id)
+            .order_by(User.username)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+    return {
+        "items": [_public_user_payload(db, item, principal) for item in users],
+        "total": total or 0,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @router.put("/users/{username}/follow", response_model=PublicUserRead)
