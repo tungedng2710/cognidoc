@@ -148,6 +148,12 @@ export const api = {
     return response.items.map(normalizeDataset);
   },
 
+  async searchDatasets(query: string, limit = 8): Promise<Dataset[]> {
+    const params = new URLSearchParams({ search: query, limit: String(limit) });
+    const response = await request<{ items: DatasetResponse[] }>(`/datasets?${params}`);
+    return response.items.map(normalizeDataset);
+  },
+
   async createDataset(body: {
     namespace: string;
     slug: string;

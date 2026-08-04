@@ -40,7 +40,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");
   });
 
-  it("searches for users and opens a public profile", async () => {
+  it("searches for users and datasets and opens a public profile", async () => {
     const publicUser = {
       username: "researcher",
       display_name: "Vision Researcher",
@@ -64,6 +64,29 @@ describe("App", () => {
           json: () => Promise.resolve({ items: [publicUser] }),
         });
       }
+      if (url.includes("/datasets?search=vision&limit=8")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            items: [{
+              id: "dataset-id",
+              namespace: "researcher",
+              slug: "research-images",
+              visibility: "public",
+              description: "Computer vision training images",
+              data_stage: "training_ready",
+              tags: ["vision"],
+              default_branch: "main",
+              created_at: "2026-07-22T08:00:00Z",
+              updated_at: "2026-07-22T08:00:00Z",
+              owner: "researcher",
+              can_edit: false,
+              latest_revision: null,
+            }],
+          }),
+        });
+      }
       if (url.endsWith("/auth/users/researcher")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(publicUser) });
       }
@@ -72,9 +95,14 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<MemoryRouter><App /></MemoryRouter>);
-    fireEvent.change((await screen.findAllByRole("combobox", { name: "Search users" }))[0]!, {
-      target: { value: "vision" },
-    });
+    fireEvent.change(
+      (await screen.findAllByRole("combobox", { name: "Search users and datasets" }))[0]!,
+      { target: { value: "vision" } },
+    );
+    expect(await screen.findByRole("link", { name: /researcher\/research-images/ })).toHaveAttribute(
+      "href",
+      "/datasets/researcher/research-images",
+    );
     fireEvent.click(await screen.findByRole("link", { name: /Vision Researcher/ }));
 
     expect(await screen.findByRole("heading", { name: "Vision Researcher" })).toBeInTheDocument();

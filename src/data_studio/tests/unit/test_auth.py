@@ -338,3 +338,31 @@ def test_users_can_be_searched_and_public_profiles_hide_private_fields(
     assert profile.json()["display_name"] == "Dataset Owner"
     assert "email" not in profile.json()
     assert client.get("/api/v1/auth/users/missing-user").status_code == 404
+
+
+def test_dataset_search_only_returns_repositories_visible_to_the_visitor(
+    client: TestClient,
+) -> None:
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"username": "owner", "password": "secure-password"},
+    ).status_code == 201
+    for slug, visibility in (("public-cats", "public"), ("private-cats", "private")):
+        assert client.post(
+            "/api/v1/datasets",
+            json={
+                "namespace": "owner",
+                "slug": slug,
+                "visibility": visibility,
+                "description": "Cat image collection",
+                "tags": ["computer-vision"],
+            },
+        ).status_code == 201
+    client.post("/api/v1/auth/logout")
+
+    results = client.get("/api/v1/datasets?search=cats&limit=8")
+    assert results.status_code == 200
+    assert [item["slug"] for item in results.json()["items"]] == ["public-cats"]
+
+    tag_results = client.get("/api/v1/datasets?search=computer-vision&limit=1")
+    assert [item["slug"] for item in tag_results.json()["items"]] == ["public-cats"]

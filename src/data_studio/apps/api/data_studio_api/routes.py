@@ -125,6 +125,8 @@ def list_datasets(
     datasets: Service,
     principal: OptionalPrincipal,
     owner: Annotated[str | None, Query(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")] = None,
+    search: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=20)] = None,
 ) -> dict[str, Any]:
     repositories = datasets.list_repositories()
     if owner is not None:
@@ -135,6 +137,33 @@ def list_datasets(
             else []
         )
     visible = [item for item in repositories if can_read_repository(item, principal)]
+    if search is not None:
+        query = search.strip().lower()
+        if not query:
+            visible = []
+        else:
+            visible = [
+                item
+                for item in visible
+                if query
+                in " ".join(
+                    [
+                        f"{item.namespace}/{item.slug}",
+                        item.slug,
+                        item.description,
+                        item.data_stage or "",
+                        *item.tags,
+                    ]
+                ).lower()
+            ]
+            visible.sort(
+                key=lambda item: (
+                    f"{item.namespace}/{item.slug}".lower() != query,
+                    item.slug.lower() != query,
+                )
+            )
+    if limit is not None:
+        visible = visible[:limit]
     return {"items": [_repository_payload(db, item, principal) for item in visible]}
 
 
