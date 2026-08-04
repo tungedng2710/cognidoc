@@ -123,7 +123,10 @@ describe("App", () => {
       (element) => element.textContent ?? "",
     );
     const uploadFiles = examples.find((example) => example.includes("files=@README.md"));
+    const openUpload = examples.find((example) => example.includes("$DATASET/uploads"));
     expect(uploadFiles?.split("\n")).toContain("  --form 'files=@README.md' \\");
+    expect(openUpload).toContain("--data '{}'");
+    expect(screen.getByText(/generated revision ID as the message/)).toBeInTheDocument();
     expect(examples.every((example) => example.split("\n").every((line) => line.length < 88))).toBe(true);
   });
 

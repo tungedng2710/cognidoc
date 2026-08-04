@@ -87,11 +87,15 @@ Uploading has three steps: open an upload, send files, then publish it.
 ```bash
 UPLOAD=$(
   ds_json \
-    --data '{"commit_message":"Initial import"}' \
+    --data '{}' \
     "$API/datasets/$DATASET/uploads" \
   | jq --raw-output '.id'
 )
 ```
+
+When `commit_message` is omitted, the published revision uses its generated
+revision ID as the message. To set a custom message, send a value such as
+`{"commit_message":"Refresh training labels"}` when opening the upload.
 
 ### 2. Send files
 

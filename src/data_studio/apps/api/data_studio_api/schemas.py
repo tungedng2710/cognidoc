@@ -273,7 +273,17 @@ class DatasetList(BaseModel):
 
 
 class UploadCreate(BaseModel):
-    commit_message: str = Field(default="Upload dataset", min_length=1, max_length=500)
+    commit_message: str | None = Field(default=None, min_length=1, max_length=500)
+
+    @field_validator("commit_message")
+    @classmethod
+    def normalized_commit_message(cls, commit_message: str | None) -> str | None:
+        if commit_message is None:
+            return None
+        normalized = commit_message.strip()
+        if not normalized:
+            raise ValueError("commit message cannot be empty")
+        return normalized
 
 
 class UploadRead(OrmModel):

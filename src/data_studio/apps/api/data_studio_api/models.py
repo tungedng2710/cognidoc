@@ -201,7 +201,7 @@ class UploadSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_str)
     repository_id: Mapped[str] = mapped_column(ForeignKey("dataset_repositories.id"), index=True)
     status: Mapped[UploadStatus] = mapped_column(Enum(UploadStatus), default=UploadStatus.open)
-    commit_message: Mapped[str] = mapped_column(String(500), default="Upload dataset")
+    commit_message: Mapped[str] = mapped_column(String(500), default="")
     bytes_received: Mapped[int] = mapped_column(BigInteger, default=0)
     file_count: Mapped[int] = mapped_column(default=0)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)

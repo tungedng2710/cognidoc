@@ -500,9 +500,12 @@ class DatasetService:
         filename = f"{namespace}-{slug}-{resolved.revision_id}.zip"
         return filename, len(files), iter_repository_zip(files, self.storage)
 
-    def create_upload(self, namespace: str, slug: str, commit_message: str) -> UploadSession:
+    def create_upload(self, namespace: str, slug: str, commit_message: str | None) -> UploadSession:
         repository = get_repository(self.db, namespace, slug)
-        upload = UploadSession(repository_id=repository.id, commit_message=commit_message)
+        upload = UploadSession(
+            repository_id=repository.id,
+            commit_message=commit_message or "",
+        )
         self.db.add(upload)
         self.db.commit()
         self.db.refresh(upload)
@@ -768,6 +771,8 @@ class DatasetService:
                 parent.revision_id if parent else None,
             )
             revision_id = manifest_sha[:12]
+            commit_message = upload.commit_message or revision_id
+            upload.commit_message = commit_message
             source_object_set_checksum = self._source_object_set_checksum(entries)
             derived_prefix = (
                 f"datasets/derived/{repository.namespace}/{repository.slug}/{revision_id}"
@@ -778,7 +783,7 @@ class DatasetService:
                 parent_revision_id=parent.id if parent else None,
                 revision_id=revision_id,
                 branch=repository.default_branch,
-                commit_message=upload.commit_message,
+                commit_message=commit_message,
                 source_object_set_checksum=source_object_set_checksum,
                 manifest_object_key=manifest_key,
                 manifest_sha256=manifest_sha,
@@ -813,7 +818,7 @@ class DatasetService:
                     revision_id=revision_id,
                     parent_revision_id=parent.revision_id if parent else None,
                     parent_git_commit=parent.git_commit if parent else None,
-                    commit_message=upload.commit_message,
+                    commit_message=commit_message,
                     manifest_bytes=manifest_bytes,
                     manifest_sha256=manifest_sha,
                     source_object_set_checksum=source_object_set_checksum,

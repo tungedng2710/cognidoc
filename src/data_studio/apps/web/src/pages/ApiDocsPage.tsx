@@ -186,9 +186,14 @@ ds_json() {
                 An upload has three small steps. This example sends a Dataset Card and one Parquet
                 file while preserving their repository paths.
               </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                When <InlineCode>commit_message</InlineCode> is omitted, the published revision uses
+                its generated revision ID as the message. Include the field in step 1 to provide a
+                custom message instead.
+              </p>
               <CodeBlock label="Step 1 · Open an upload">{String.raw`UPLOAD=$(
   ds_json \
-    --data '{"commit_message":"Initial import"}' \
+    --data '{}' \
     "$API/datasets/$DATASET/uploads" \
   | jq --raw-output '.id'
 )`}</CodeBlock>

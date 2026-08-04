@@ -27,8 +27,10 @@ describe("UploadDialog", () => {
 
     const fileInput = screen.getByLabelText("Choose files");
     const folderInput = screen.getByLabelText("Choose folder");
+    const revisionMessage = screen.getByRole("textbox", { name: /Revision message/ });
     expect(fileInput).not.toHaveAttribute("webkitdirectory");
     expect(folderInput).toHaveAttribute("webkitdirectory");
+    expect(revisionMessage).toHaveValue("Add revision via upload");
 
     const readme = new File(["# Dataset"], "README.md", {
       type: "text/markdown",
@@ -40,6 +42,7 @@ describe("UploadDialog", () => {
 
     expect(screen.getByText("2 files selected")).toBeInTheDocument();
     expect(screen.getByText(/· repository root$/)).toBeInTheDocument();
+    fireEvent.change(revisionMessage, { target: { value: "Refresh training labels" } });
     fireEvent.click(screen.getByRole("button", { name: "Upload and publish" }));
 
     await vi.waitFor(() => {
@@ -47,6 +50,7 @@ describe("UploadDialog", () => {
         "owner",
         "plates",
         [readme, parquet],
+        "Refresh training labels",
         expect.any(Function),
         expect.any(AbortSignal),
       );

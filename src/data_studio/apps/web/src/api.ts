@@ -300,6 +300,7 @@ export const api = {
     namespace: string,
     dataset: string,
     files: File[],
+    commitMessage: string,
     onProgress: (progress: UploadProgress) => void,
     signal?: AbortSignal,
   ): Promise<Revision> {
@@ -311,17 +312,12 @@ export const api = {
       uploadedBytes = 0,
     ) => onProgress({ phase, message, uploadedFiles, totalFiles: files.length, uploadedBytes, totalBytes });
     report("preparing", "Creating a secure upload session…");
-    const includesFolderPaths = files.some(
-      (file) => Boolean((file as File & { webkitRelativePath?: string }).webkitRelativePath),
-    );
     const upload = await request<{ id: string }>(
       `/datasets/${encodeURIComponent(namespace)}/${encodeURIComponent(dataset)}/uploads`,
       {
         method: "POST",
         body: JSON.stringify({
-          commit_message: includesFolderPaths
-            ? "Upload dataset folder"
-            : "Upload dataset files",
+          commit_message: commitMessage,
         }),
         signal,
       },

@@ -20,6 +20,8 @@ interface UploadDialogProps {
   onComplete: (revision: Revision) => void;
 }
 
+const DEFAULT_REVISION_MESSAGE = "Add revision via upload";
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -43,6 +45,7 @@ export function UploadDialog({
   const folderInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [revisionMessage, setRevisionMessage] = useState(DEFAULT_REVISION_MESSAGE);
   const [selectionKind, setSelectionKind] = useState<"files" | "folder" | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState("");
@@ -51,6 +54,7 @@ export function UploadDialog({
   useEffect(() => {
     if (!open) return;
     setFiles([]);
+    setRevisionMessage(DEFAULT_REVISION_MESSAGE);
     setSelectionKind(null);
     setProgress(null);
     setError("");
@@ -76,6 +80,7 @@ export function UploadDialog({
         namespace,
         dataset,
         files,
+        revisionMessage.trim(),
         setProgress,
         controller.signal,
       );
@@ -122,7 +127,22 @@ export function UploadDialog({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <label className="field-label mt-5">
+          Revision message
+          <input
+            className="field-input"
+            disabled={Boolean(progress)}
+            maxLength={500}
+            required
+            value={revisionMessage}
+            onChange={(event) => setRevisionMessage(event.target.value)}
+          />
+          <span className="mt-1 block font-normal text-slate-500">
+            Describe what changed in this immutable revision.
+          </span>
+        </label>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label
             className={`flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed px-5 text-center transition ${
               progress
@@ -226,7 +246,7 @@ export function UploadDialog({
           <button
             className="button-primary"
             type="button"
-            disabled={!files.length || Boolean(progress)}
+            disabled={!files.length || !revisionMessage.trim() || Boolean(progress)}
             onClick={() => void upload()}
           >
             <UploadCloud className="size-4" /> Upload and publish

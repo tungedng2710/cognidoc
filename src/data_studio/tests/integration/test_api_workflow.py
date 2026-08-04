@@ -34,7 +34,7 @@ def _create_repository(client: TestClient) -> None:
 def _upload_fixture(client: TestClient) -> dict:
     create = client.post(
         "/api/v1/datasets/research/sentiment/uploads",
-        json={"commit_message": "Import Hugging Face folder"},
+        json={},
     )
     assert create.status_code == 201, create.text
     upload_id = create.json()["id"]
@@ -78,6 +78,7 @@ def test_upload_to_viewer_and_byte_identical_download(client: TestClient) -> Non
     revision = uploaded["revision"]
 
     assert revision["status"] == "ready"
+    assert revision["commit_message"] == revision["revision_id"]
     assert len(revision["git_commit"]) == 40
     assert revision["dvc_revision"].startswith("md5:")
     assert len(revision["source_object_set_checksum"]) == 64
@@ -165,6 +166,7 @@ def test_viewer_pages_and_filters_rows_beyond_the_ingestion_preview(
         json={"expected_file_count": 1},
     )
     assert complete.status_code == 200, complete.text
+    assert complete.json()["commit_message"] == "Upload more than one preview page"
     revision_id = complete.json()["revision_id"]
     viewer_path = "/api/v1/datasets/research/sentiment/viewer/default/train"
 
