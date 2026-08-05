@@ -3,7 +3,6 @@ import {
   Database,
   HardDrive,
   Plus,
-  Search,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -152,7 +151,6 @@ export function DatasetsPage() {
   const { user, openAuth } = useAuth();
   const [datasets, setDatasets] = useState<Dataset[] | null>(null);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
 
   const load = () => {
@@ -162,18 +160,6 @@ export function DatasetsPage() {
     });
   };
   useEffect(load, [user?.id]);
-
-  const filtered = datasets?.filter((dataset) =>
-    [
-      `${dataset.namespace}/${dataset.slug}`,
-      dataset.description,
-      dataset.data_stage ?? "",
-      ...dataset.tags,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
 
   return (
     <div className="min-h-screen">
@@ -223,34 +209,20 @@ export function DatasetsPage() {
         </section>
 
         <section className="mt-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-semibold tracking-tight text-slate-950">Repositories</h2>
-            </div>
-            <label className="relative block w-full max-w-xs">
-              <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-              <input
-                className="field-input pl-9"
-                type="search"
-                placeholder="Search datasets"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-          </div>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950">Repositories</h2>
           <div className="mt-4">
             {error ? <ErrorState message={error} retry={load} /> : null}
             {!error && datasets === null ? <LoadingState label="Loading repositories…" /> : null}
-            {!error && datasets !== null && !filtered?.length ? (
+            {!error && datasets !== null && !datasets.length ? (
               <EmptyState
-                title={query ? "No matching datasets" : "Create your first dataset"}
-                description={query ? "Try a different name or description." : user ? "Create a repository, then upload a dataset folder." : "Sign in to create a dataset, or browse public repositories here."}
-                action={!query ? <button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}><Plus className="size-4" /> {user ? "New dataset" : "Create account"}</button> : undefined}
+                title="Create your first dataset"
+                description={user ? "Create a repository, then upload a dataset folder." : "Sign in to create a dataset, or browse public repositories here."}
+                action={<button className="button-primary" type="button" onClick={() => user ? setCreating(true) : openAuth("register")}><Plus className="size-4" /> {user ? "New dataset" : "Create account"}</button>}
               />
             ) : null}
-            {filtered?.length ? (
+            {datasets?.length ? (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {filtered.map((dataset) => (
+                {datasets.map((dataset) => (
                   <Link
                     className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs shadow-slate-900/5 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-950/5"
                     to={`/datasets/${dataset.namespace}/${dataset.slug}`}

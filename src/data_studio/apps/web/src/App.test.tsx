@@ -37,6 +37,8 @@ describe("App", () => {
     expect(await screen.findByText("Datasets, clearly versioned.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Repositories" })).toBeInTheDocument();
     expect(await screen.findByText("Create your first dataset")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search datasets")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("combobox", { name: "Search users and datasets" })).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "API guide" })).toHaveAttribute("href", "/docs/api");
   });
 
