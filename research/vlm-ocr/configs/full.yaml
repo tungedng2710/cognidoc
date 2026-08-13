@@ -1,0 +1,30 @@
+model: datalab-to/chandra-ocr-2
+dataset: /media/drive-2t/tungn197/idp/data/images
+output_dir: outputs/chandra2-mae-full
+
+mask_ratio: 0.75
+decoder_hidden_size: 384
+decoder_layers: 4
+decoder_heads: 6
+min_pixels: 65536
+max_pixels: 589824
+
+# Streaming avoids retaining ~20M path objects. With eight GPUs this gives an
+# effective batch of 1024; adjust accumulation as world size changes.
+streaming: true
+shuffle_buffer: 10000
+batch_size: 1
+gradient_accumulation_steps: 128
+max_steps: 40000
+vision_learning_rate: 0.00001
+decoder_learning_rate: 0.0001
+weight_decay: 0.05
+warmup_ratio: 0.05
+max_grad_norm: 1.0
+mixed_precision: bf16
+gradient_checkpointing: true
+num_workers: 2
+log_every: 10
+save_every: 1000
+keep_last_checkpoints: 3
+seed: 42

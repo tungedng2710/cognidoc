@@ -241,6 +241,7 @@ research/table_recognition_vlm/rl/*
 !research/table_recognition_vlm/rl/*.py
 !research/table_recognition_vlm/rl/README.md
 !research/table_recognition_vlm/rl/prompt.md
+!research/vlm-ocr
 # !research/VLM/convert_to_ollama.py
 unsloth*
 *.pth
