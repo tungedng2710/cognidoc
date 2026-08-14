@@ -18,6 +18,7 @@ import yaml
 from accelerate import Accelerator
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import AutoProcessor, get_cosine_schedule_with_warmup
 
 from chandra_mae.checkpoint import load_chandra_vision, save_vision_delta
@@ -236,8 +237,19 @@ def main() -> None:
     model.train()
     running_loss = 0.0
     micro_steps = 0
+    accumulation_step = 0
     started = time.monotonic()
     optimizer.zero_grad(set_to_none=True)
+    progress = tqdm(
+        total=config.max_steps,
+        initial=completed_steps,
+        desc="optimizer steps",
+        unit="step",
+        dynamic_ncols=True,
+        disable=not accelerator.is_main_process,
+    )
+    if accelerator.is_main_process:
+        progress.set_postfix_str("waiting for first batch")
     while completed_steps < config.max_steps:
         for batch in loader:
             if config.streaming:
@@ -262,10 +274,32 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
             running_loss += output.loss.detach().float().item()
             micro_steps += 1
+            accumulation_step += 1
             if not accelerator.sync_gradients:
+                refresh_every = max(1, config.gradient_accumulation_steps // 100)
+                if accelerator.is_main_process and (
+                    accumulation_step == 1 or accumulation_step % refresh_every == 0
+                ):
+                    progress.set_postfix(
+                        accumulation=(
+                            f"{accumulation_step}/{config.gradient_accumulation_steps}"
+                        ),
+                        batch_loss=f"{output.loss.detach().float().item():.4f}",
+                    )
                 continue
 
             completed_steps += 1
+            if accelerator.is_main_process:
+                progress.update(1)
+                progress.set_postfix(
+                    accumulation=(
+                        f"{config.gradient_accumulation_steps}/"
+                        f"{config.gradient_accumulation_steps}"
+                    ),
+                    batch_loss=f"{output.loss.detach().float().item():.4f}",
+                    vision_lr=f"{scheduler.get_last_lr()[0]:.2e}",
+                )
+            accumulation_step = 0
             if completed_steps % config.log_every == 0:
                 loss = running_loss / max(1, micro_steps)
                 loss_tensor = torch.tensor(loss, device=accelerator.device)
@@ -281,7 +315,7 @@ def main() -> None:
                 if accelerator.is_main_process:
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(metrics) + "\n")
-                    accelerator.print(json.dumps(metrics))
+                    progress.write(json.dumps(metrics))
                 running_loss = 0.0
                 micro_steps = 0
 
@@ -295,6 +329,7 @@ def main() -> None:
             if completed_steps >= config.max_steps:
                 break
 
+    progress.close()
     accelerator.wait_for_everyone()
     unwrapped = accelerator.unwrap_model(model)
     if accelerator.is_main_process:

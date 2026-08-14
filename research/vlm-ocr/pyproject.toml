@@ -15,6 +15,7 @@ dependencies = [
   "pyyaml>=6",
   "safetensors>=0.5",
   "torch>=2.5",
+  "tqdm>=4.66",
   "transformers>=5.0",
 ]
 

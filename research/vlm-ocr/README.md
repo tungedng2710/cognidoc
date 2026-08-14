@@ -42,6 +42,10 @@ Edit `configs/local.yaml` for the local dataset, output directory, and training
 schedule. Configuration YAML files are ignored except for the checked-in
 `configs/example.yaml` template.
 
+The progress bar reports global optimizer steps and the current gradient
+accumulation microbatch (for example, `accumulation=137/512`) so long effective
+batches remain visibly active before the next JSON metric is written.
+
 For a short integration run, override the schedule and decoder size:
 
 ```bash
