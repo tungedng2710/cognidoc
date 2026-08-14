@@ -1,6 +1,6 @@
 model: datalab-to/chandra-ocr-2
 dataset: sample_dataset
-output_dir: outputs/chandra2-mae-pilot
+output_dir: outputs/chandra2-mae
 
 # DAVE-style objective from chandra2_document_ai_training_plan.md
 mask_ratio: 0.75

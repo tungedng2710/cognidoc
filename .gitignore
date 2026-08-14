@@ -242,6 +242,9 @@ research/table_recognition_vlm/rl/*
 !research/table_recognition_vlm/rl/README.md
 !research/table_recognition_vlm/rl/prompt.md
 !research/vlm-ocr
+# Keep machine-specific MAE training configs local; commit only the template.
+research/vlm-ocr/configs/*.yaml
+!research/vlm-ocr/configs/example.yaml
 # !research/VLM/convert_to_ollama.py
 unsloth*
 *.pth

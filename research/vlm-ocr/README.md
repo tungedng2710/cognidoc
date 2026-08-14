@@ -34,18 +34,18 @@ single safetensors file, but only vision tensors are materialized in CPU memory.
 Launch on one or more GPUs with Accelerate:
 
 ```bash
-accelerate launch train_mae.py --config configs/pilot.yaml
+cp configs/example.yaml configs/local.yaml
+accelerate launch train_mae.py --config configs/local.yaml
 ```
 
-`configs/full.yaml` contains the 40k-step full-corpus recipe. It enables a
-bounded-memory, buffer-shuffled directory stream so the ~20M filenames are not
-materialized at startup. Its accumulation value assumes eight GPUs (effective
-batch 1024); scale it inversely with GPU count.
+Edit `configs/local.yaml` for the local dataset, output directory, and training
+schedule. Configuration YAML files are ignored except for the checked-in
+`configs/example.yaml` template.
 
 For a short integration run, override the schedule and decoder size:
 
 ```bash
-accelerate launch train_mae.py --config configs/pilot.yaml \
+accelerate launch train_mae.py --config configs/local.yaml \
   --max-steps 2 --gradient-accumulation-steps 1 \
   --decoder-hidden-size 128 --decoder-layers 1 --decoder-heads 4
 ```
