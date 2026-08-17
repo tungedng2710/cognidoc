@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+
 import torch
 from PIL import Image
 from safetensors import safe_open
+from safetensors.torch import load_file, save_file
 from transformers import AutoModel, Qwen3_5VisionConfig
 
 from chandra_mae.checkpoint import load_chandra_vision, save_vision_delta
@@ -119,6 +122,41 @@ def test_streaming_dataset_and_prefixed_delta(tmp_path):
     assert (
         reloaded.patch_embed.proj.weight.shape
         == tiny_vision().patch_embed.proj.weight.shape
+    )
+
+
+def test_loads_sharded_vision_checkpoint_without_unrelated_shards(tmp_path):
+    checkpoint_dir = tmp_path / "sharded"
+    tiny_vision().save_pretrained(checkpoint_dir, safe_serialization=True)
+    state = load_file(checkpoint_dir / "model.safetensors")
+    names = sorted(state)
+    midpoint = len(names) // 2
+    shard_names = [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+    ]
+    weight_map = {}
+    for shard_name, shard_keys in zip(
+        shard_names, (names[:midpoint], names[midpoint:]), strict=True
+    ):
+        prefixed = {f"model.visual.{name}": state[name] for name in shard_keys}
+        save_file(prefixed, checkpoint_dir / shard_name)
+        weight_map.update({name: shard_name for name in prefixed})
+    # The loader must not require a shard that contains only language weights.
+    weight_map["model.language_model.layers.0.fake.weight"] = (
+        "model-00003-of-00003.safetensors"
+    )
+    (checkpoint_dir / "model.safetensors").unlink()
+    (checkpoint_dir / "model.safetensors.index.json").write_text(
+        json.dumps({"metadata": {}, "weight_map": weight_map})
+    )
+
+    reloaded, prefix = load_chandra_vision(
+        str(checkpoint_dir), local_files_only=True
+    )
+    assert prefix == "model.visual."
+    assert torch.equal(
+        reloaded.patch_embed.proj.weight, state["patch_embed.proj.weight"]
     )
 
 
