@@ -75,6 +75,14 @@ See the [vision-language alignment guide](docs/vision_language_alignment.md)
 for the required paired-data format, model freezing policy, assistant-only
 loss, recommended hyperparameters, checkpointing, and evaluation procedure.
 
+For a paired `images/` and `labels/` dataset, copy the alignment configuration
+and launch the supervised merger-alignment trainer:
+
+```bash
+cp docs/alignment_example.yaml configs/alignment_local.yaml
+accelerate launch train_alignment.py --config configs/alignment_local.yaml
+```
+
 ## View the masks
 
 Render deterministic side-by-side previews using the same preprocessing and
@@ -88,5 +96,5 @@ python visualize_masks.py --count 4 --seed 42 --output previews/masked_samples.p
 
 ```bash
 pytest -q
-python -m compileall -q chandra_mae train_mae.py sample_images.py
+python -m compileall -q chandra_alignment chandra_mae train_alignment.py train_mae.py
 ```

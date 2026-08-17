@@ -17,10 +17,9 @@ image
 This is a supervised stage. Raw document images alone are insufficient;
 alignment requires an image, an instruction, and a target response.
 
-> **Repository status:** the repository currently provides MAE training and
-> vision-delta loading, but it does not yet include `train_alignment.py`. This
-> document defines the data format, model setup, loss, and training contract for
-> that trainer.
+The repository provides `train_alignment.py`, which implements the data format,
+model setup, assistant-only loss, validation, checkpoint resumption, and compact
+delta export described below.
 
 ## Prerequisites
 
@@ -250,6 +249,46 @@ Recommended first schedule:
 - Save every 250-500 steps.
 
 Select checkpoints using downstream validation, not training loss alone.
+
+Copy and edit the provided configuration:
+
+```bash
+cp docs/alignment_example.yaml configs/alignment_local.yaml
+```
+
+At minimum, set `dataset`, `mae_delta`, and `output_dir`, then run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 accelerate launch \
+  --num_processes 1 \
+  --num_machines 1 \
+  --mixed_precision bf16 \
+  --dynamo_backend no \
+  train_alignment.py \
+  --config configs/alignment_local.yaml
+```
+
+Run a short integration test before the full schedule:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 accelerate launch \
+  --num_processes 1 \
+  --mixed_precision bf16 \
+  train_alignment.py \
+  --config configs/alignment_local.yaml \
+  --max-steps 2 \
+  --gradient-accumulation-steps 1 \
+  --eval-every 1 \
+  --save-every 2
+```
+
+Resume from a full Accelerate checkpoint with:
+
+```bash
+accelerate launch train_alignment.py \
+  --config configs/alignment_local.yaml \
+  --resume-from outputs/chandra2-alignment/checkpoints/step-250
+```
 
 ## Optimizer
 

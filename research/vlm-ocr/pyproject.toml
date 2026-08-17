@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["chandra_mae*"]
+include = ["chandra_alignment*", "chandra_mae*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
