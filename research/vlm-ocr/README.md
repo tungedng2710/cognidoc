@@ -1,9 +1,10 @@
 # Chandra 2 document MAE training
 
-This repository implements the first experimental branch in
-`chandra2_document_ai_training_plan.md`: Chandra's native vision tower is
-adapted with 75% random masking and masked-only MSE against resized raw RGB
-patches. The original multimodal merger and language model are not involved.
+This repository implements the first experimental branch in the
+[Chandra 2 training plan](docs/chandra2_document_ai_training_plan.md):
+Chandra's native vision tower is adapted with 75% random masking and masked-only
+MSE against resized raw RGB patches. The original multimodal merger and language
+model are not involved.
 
 The implementation is an asymmetric MAE: only the 25% visible tokens pass
 through the Chandra encoder. A temporary 4-layer decoder restores masked token
@@ -69,6 +70,10 @@ uses exact original parameter names, so unexpected keys are rejected. Perform
 the short projector/merger alignment stage described in the plan before final
 document SFT; those supervised stages require paired OCR/Markdown/layout labels
 and are deliberately separate from this raw-image pipeline.
+
+See the [vision-language alignment guide](docs/vision_language_alignment.md)
+for the required paired-data format, model freezing policy, assistant-only
+loss, recommended hyperparameters, checkpointing, and evaluation procedure.
 
 ## View the masks
 
