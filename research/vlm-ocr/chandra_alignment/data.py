@@ -14,6 +14,8 @@ from torch.utils.data import IterableDataset, get_worker_info
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+OVERLENGTH_COUNT_KEY = "_overlength_count"
+ORIGINAL_COUNT_KEY = "_original_count"
 
 
 def _stable_fraction(value: str) -> float:
@@ -116,7 +118,7 @@ class PairedJsonDataset(IterableDataset[dict[str, Any]]):
         target = json.dumps(
             label, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         )
-        return {"image": image, "target": target}
+        return {"image": image, "target": target, "source": str(image_path)}
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         worker = get_worker_info()
@@ -165,12 +167,16 @@ class AlignmentCollator:
         min_pixels: int = 65_536,
         max_pixels: int = 589_824,
         max_sequence_length: int = 8_192,
+        overlength_policy: str = "skip",
     ) -> None:
         self.processor = processor
         self.prompt = prompt
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
         self.max_sequence_length = max_sequence_length
+        if overlength_policy not in {"skip", "error"}:
+            raise ValueError("overlength_policy must be 'skip' or 'error'")
+        self.overlength_policy = overlength_policy
         marker = "<|im_start|>assistant\n<think>\n\n</think>\n\n"
         self.target_marker_ids = processor.tokenizer(
             marker, add_special_tokens=False
@@ -191,7 +197,7 @@ class AlignmentCollator:
             {"role": "assistant", "content": target},
         ]
 
-    def __call__(self, examples: Sequence[dict[str, Any]]) -> dict[str, torch.Tensor]:
+    def _process(self, examples: Sequence[dict[str, Any]]) -> Any:
         texts = [
             self.processor.apply_chat_template(
                 self._conversation(example["target"]),
@@ -200,7 +206,7 @@ class AlignmentCollator:
             )
             for example in examples
         ]
-        inputs = self.processor(
+        return self.processor(
             images=[example["image"] for example in examples],
             text=texts,
             padding=True,
@@ -210,6 +216,23 @@ class AlignmentCollator:
             max_pixels=self.max_pixels,
             return_tensors="pt",
         )
+
+    def _invalid_rows(self, inputs: Any) -> list[int]:
+        invalid: list[int] = []
+        for row in range(inputs["input_ids"].shape[0]):
+            token_ids = inputs["input_ids"][row].tolist()
+            marker_start = find_subsequence(token_ids, self.target_marker_ids)
+            if marker_start < 0:
+                invalid.append(row)
+                continue
+            target_start = marker_start + len(self.target_marker_ids)
+            target_ids = inputs["input_ids"][row, target_start:]
+            target_mask = inputs["attention_mask"][row, target_start:].bool()
+            if self.end_token_id not in target_ids[target_mask].tolist():
+                invalid.append(row)
+        return invalid
+
+    def _make_labels(self, inputs: Any) -> torch.Tensor:
         labels = inputs["input_ids"].clone()
         for row in range(labels.shape[0]):
             token_ids = inputs["input_ids"][row].tolist()
@@ -226,9 +249,40 @@ class AlignmentCollator:
                     "No assistant target tokens remain after truncation; increase max_sequence_length"
                 )
             if self.end_token_id not in labels[row][labels[row] != -100].tolist():
-                raise RuntimeError(
-                    "The JSON target was truncated before its end token; "
-                    "increase max_sequence_length"
-                )
-        inputs["labels"] = labels
+                raise AssertionError("An overlength row survived collator filtering")
+        return labels
+
+    def __call__(self, examples: Sequence[dict[str, Any]]) -> dict[str, Any]:
+        original_count = len(examples)
+        inputs = self._process(examples)
+        invalid_rows = self._invalid_rows(inputs)
+        if invalid_rows and self.overlength_policy == "error":
+            sources = [
+                str(examples[index].get("source", f"batch row {index}"))
+                for index in invalid_rows[:3]
+            ]
+            raise RuntimeError(
+                f"{len(invalid_rows)} JSON target(s) exceeded max_sequence_length="
+                f"{self.max_sequence_length}; first: {', '.join(sources)}"
+            )
+
+        if invalid_rows:
+            invalid = set(invalid_rows)
+            examples = [
+                example
+                for index, example in enumerate(examples)
+                if index not in invalid
+            ]
+            if not examples:
+                return {
+                    OVERLENGTH_COUNT_KEY: torch.tensor(len(invalid_rows)),
+                    ORIGINAL_COUNT_KEY: torch.tensor(original_count),
+                }
+            # Multimodal pixel tensors are packed rather than batch-indexed, so
+            # rebuild the processor output instead of slicing the original batch.
+            inputs = self._process(examples)
+
+        inputs["labels"] = self._make_labels(inputs)
+        inputs[OVERLENGTH_COUNT_KEY] = torch.tensor(len(invalid_rows))
+        inputs[ORIGINAL_COUNT_KEY] = torch.tensor(original_count)
         return dict(inputs)

@@ -290,6 +290,22 @@ accelerate launch train_alignment.py \
   --resume-from outputs/chandra2-alignment/checkpoints/step-250
 ```
 
+Targets that do not fit within `max_sequence_length` are skipped by default,
+before tensors are moved to the GPU. The cumulative count is shown as
+`skipped` in the progress bar and written to `metrics.jsonl`. Keep this policy
+explicit in the configuration:
+
+```yaml
+max_sequence_length: 8192
+overlength_policy: skip
+```
+
+Use `overlength_policy: error` when auditing a new dataset if training should
+stop on the first overlength label. On one GPU, other examples in a mixed batch
+are retained. During distributed training, an entire cross-rank microbatch is
+dropped if any rank contains an overlength example, which keeps DDP execution
+and gradient weighting synchronized.
+
 ## Optimizer
 
 For projector-only training:
@@ -427,6 +443,16 @@ LoRA or normal supervised fine-tuning.
 - Reduce microbatch size and increase accumulation.
 - Reduce maximum target length.
 - Enable gradient checkpointing.
+
+### JSON targets exceed the sequence limit
+
+- Keep `overlength_policy: skip` to exclude them without training on truncated,
+  invalid JSON.
+- Monitor `skipped_overlength_samples` in `metrics.jsonl`; a large count means
+  the labels should be split or the data distribution reconsidered.
+- Do not raise the context ceiling far beyond typical sample lengths merely to
+  accommodate a few outliers, because long-context backpropagation can exhaust
+  GPU memory.
 
 ### Training is slow despite a large GPU
 

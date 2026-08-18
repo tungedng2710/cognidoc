@@ -8,7 +8,12 @@ import torch
 from PIL import Image
 from transformers import AutoProcessor
 
-from chandra_alignment.data import AlignmentCollator, PairedJsonDataset
+from chandra_alignment.data import (
+    ORIGINAL_COUNT_KEY,
+    OVERLENGTH_COUNT_KEY,
+    AlignmentCollator,
+    PairedJsonDataset,
+)
 from train_alignment import configure_trainable_parameters, save_alignment_delta
 
 
@@ -92,10 +97,14 @@ def test_missing_label_is_reported(tmp_path):
         list(dataset)
 
 
-def test_collator_masks_everything_before_json_target():
-    processor = AutoProcessor.from_pretrained(
+@pytest.fixture(scope="module")
+def processor():
+    return AutoProcessor.from_pretrained(
         "datalab-to/chandra-ocr-2", local_files_only=True
     )
+
+
+def test_collator_masks_everything_before_json_target(processor):
     collator = AlignmentCollator(
         processor,
         prompt="Extract JSON.",
@@ -119,6 +128,59 @@ def test_collator_masks_everything_before_json_target():
     assert '"amount":123' in decoded
     assert "<|im_end|>" in decoded
     assert batch["pixel_values"].shape[1] == 1_536
+    assert batch[OVERLENGTH_COUNT_KEY].item() == 0
+    assert batch[ORIGINAL_COUNT_KEY].item() == 1
+
+
+def test_collator_skips_overlength_sample_and_rebuilds_batch(processor):
+    collator = AlignmentCollator(
+        processor,
+        prompt="Extract JSON.",
+        min_pixels=65_536,
+        max_pixels=65_536,
+        max_sequence_length=512,
+        overlength_policy="skip",
+    )
+    image = Image.new("RGB", (64, 96), "white")
+    short = {"image": image, "target": '{"ok":true}', "source": "short.png"}
+    long = {
+        "image": image,
+        "target": json.dumps({"text": "word " * 2_000}),
+        "source": "long.png",
+    }
+    batch = collator([short, long])
+
+    assert batch["input_ids"].shape[0] == 1
+    assert batch[OVERLENGTH_COUNT_KEY].item() == 1
+    assert batch[ORIGINAL_COUNT_KEY].item() == 2
+    decoded = processor.tokenizer.decode(batch["labels"][0][batch["labels"][0] != -100])
+    assert '"ok":true' in decoded
+
+    empty_batch = collator([long])
+    assert "input_ids" not in empty_batch
+    assert empty_batch[OVERLENGTH_COUNT_KEY].item() == 1
+    assert empty_batch[ORIGINAL_COUNT_KEY].item() == 1
+
+
+def test_collator_error_policy_names_overlength_source(processor):
+    collator = AlignmentCollator(
+        processor,
+        prompt="Extract JSON.",
+        min_pixels=65_536,
+        max_pixels=65_536,
+        max_sequence_length=512,
+        overlength_policy="error",
+    )
+    with pytest.raises(RuntimeError, match="long-label.png"):
+        collator(
+            [
+                {
+                    "image": Image.new("RGB", (64, 96), "white"),
+                    "target": json.dumps({"text": "word " * 2_000}),
+                    "source": "long-label.png",
+                }
+            ]
+        )
 
 
 class FakeFullModel(torch.nn.Module):

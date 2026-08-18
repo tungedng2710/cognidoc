@@ -27,7 +27,12 @@ from transformers import (
     get_cosine_schedule_with_warmup,
 )
 
-from chandra_alignment import AlignmentCollator, PairedJsonDataset
+from chandra_alignment import (
+    ORIGINAL_COUNT_KEY,
+    OVERLENGTH_COUNT_KEY,
+    AlignmentCollator,
+    PairedJsonDataset,
+)
 from chandra_mae.checkpoint import apply_vision_delta
 
 
@@ -45,6 +50,7 @@ class AlignmentConfig:
     min_pixels: int = 65_536
     max_pixels: int = 589_824
     max_sequence_length: int = 8_192
+    overlength_policy: str = "skip"
     attention_implementation: str = "sdpa"
     batch_size: int = 2
     gradient_accumulation_steps: int = 32
@@ -112,6 +118,8 @@ def parse_args() -> AlignmentConfig:
         parser.error("validation_fraction must be between 0 and 1")
     if config.mixed_precision not in {"no", "fp16", "bf16"}:
         parser.error("mixed_precision must be one of: no, fp16, bf16")
+    if config.overlength_policy not in {"skip", "error"}:
+        parser.error("overlength_policy must be one of: skip, error")
     return config
 
 
@@ -223,6 +231,7 @@ def make_loader(
         min_pixels=config.min_pixels,
         max_pixels=config.max_pixels,
         max_sequence_length=config.max_sequence_length,
+        overlength_policy=config.overlength_policy,
     )
     return DataLoader(
         dataset,
@@ -241,31 +250,45 @@ def move_batch(
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
 
 
+def unpack_collated_batch(
+    batch: dict[str, Any],
+) -> tuple[dict[str, torch.Tensor] | None, int, int]:
+    """Remove collator metadata and report overlength/original sample counts."""
+    overlength_count = int(batch.pop(OVERLENGTH_COUNT_KEY).item())
+    original_count = int(batch.pop(ORIGINAL_COUNT_KEY).item())
+    return (batch or None), overlength_count, original_count
+
+
 @torch.no_grad()
 def evaluate(
     model: torch.nn.Module,
     loader: DataLoader,
     accelerator: Accelerator,
     max_batches: int,
-) -> float:
+) -> tuple[float, int]:
     evaluation_model = accelerator.unwrap_model(model)
     evaluation_model.eval()
     loss_sum = torch.zeros((), device=accelerator.device, dtype=torch.float64)
     example_count = torch.zeros((), device=accelerator.device, dtype=torch.float64)
-    for index, batch in enumerate(loader):
+    skipped_count = torch.zeros((), device=accelerator.device, dtype=torch.float64)
+    for index, raw_batch in enumerate(loader):
         if index >= max_batches:
             break
+        batch, overlength_count, original_count = unpack_collated_batch(raw_batch)
+        skipped_count += overlength_count if batch is not None else original_count
+        if batch is None:
+            continue
         batch = move_batch(batch, accelerator.device)
         output = evaluation_model(**batch)
         count = batch["input_ids"].shape[0]
         loss_sum += output.loss.detach().double() * count
         example_count += count
-    totals = torch.stack((loss_sum, example_count))
+    totals = torch.stack((loss_sum, example_count, skipped_count))
     totals = accelerator.reduce(totals, reduction="sum")
     evaluation_model.train()
     if totals[1].item() == 0:
-        return float("nan")
-    return (totals[0] / totals[1]).item()
+        return float("nan"), int(totals[2].item())
+    return (totals[0] / totals[1]).item(), int(totals[2].item())
 
 
 def rotate_checkpoints(root: Path, keep: int) -> None:
@@ -430,12 +453,44 @@ def main() -> None:
     step_loss = torch.zeros((), device=accelerator.device)
     step_microbatches = 0
     accumulation_step = 0
+    skipped_samples = 0
     started = time.monotonic()
 
     while completed_steps < config.max_steps:
         batches_this_pass = 0
-        for batch in train_loader:
+        usable_batches_this_pass = 0
+        for raw_batch in train_loader:
             batches_this_pass += 1
+            batch, overlength_count, original_count = unpack_collated_batch(raw_batch)
+            if accelerator.num_processes > 1:
+                counts = torch.tensor(
+                    [overlength_count, original_count],
+                    device=accelerator.device,
+                    dtype=torch.long,
+                )
+                counts = accelerator.reduce(counts, reduction="sum")
+                global_overlength = int(counts[0].item())
+                global_original = int(counts[1].item())
+                if global_overlength:
+                    # Filtering different rows on different ranks changes local
+                    # batch sizes and gradient weighting. Drop this synchronized
+                    # microbatch everywhere instead.
+                    skipped_samples += global_original
+                    if accelerator.is_main_process:
+                        progress.set_postfix_str(
+                            f"skipped={skipped_samples} (overlength)"
+                        )
+                    continue
+            else:
+                skipped_samples += (
+                    overlength_count if batch is not None else original_count
+                )
+
+            if batch is None:
+                if accelerator.is_main_process:
+                    progress.set_postfix_str(f"skipped={skipped_samples} (overlength)")
+                continue
+            usable_batches_this_pass += 1
             batch = move_batch(batch, accelerator.device)
             with accelerator.accumulate(model):
                 output = model(**batch)
@@ -459,7 +514,8 @@ def main() -> None:
                 if accelerator.is_main_process:
                     progress.set_postfix_str(
                         f"accumulation={accumulation_step}/"
-                        f"{config.gradient_accumulation_steps}"
+                        f"{config.gradient_accumulation_steps}, "
+                        f"skipped={skipped_samples}"
                     )
                 continue
 
@@ -475,6 +531,7 @@ def main() -> None:
                 progress.set_postfix(
                     loss=f"{reduced_step_loss:.4f}",
                     merger_lr=f"{scheduler.get_last_lr()[0]:.2e}",
+                    skipped=skipped_samples,
                 )
 
             if completed_steps % config.log_every == 0:
@@ -485,6 +542,7 @@ def main() -> None:
                     "step": completed_steps,
                     "train_loss": train_loss,
                     "merger_lr": scheduler.get_last_lr()[0],
+                    "skipped_overlength_samples": skipped_samples,
                     "elapsed_seconds": time.monotonic() - started,
                 }
                 if vision_parameters:
@@ -497,13 +555,14 @@ def main() -> None:
                 window_microbatches = 0
 
             if completed_steps % config.eval_every == 0:
-                validation_loss = evaluate(
+                validation_loss, validation_skipped = evaluate(
                     model, validation_loader, accelerator, config.eval_batches
                 )
                 if accelerator.is_main_process:
                     evaluation_metrics = {
                         "step": completed_steps,
                         "validation_loss": validation_loss,
+                        "validation_skipped_overlength_samples": validation_skipped,
                     }
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(evaluation_metrics) + "\n")
@@ -524,6 +583,12 @@ def main() -> None:
                 "The training loader produced no batches. Check image/label pairing, "
                 "validation_fraction, batch_size, and distributed sharding."
             )
+        if usable_batches_this_pass == 0:
+            raise RuntimeError(
+                "Every training batch was skipped because its JSON targets exceeded "
+                f"max_sequence_length={config.max_sequence_length}. Increase the limit "
+                "or remove/split the overlength labels."
+            )
 
     progress.close()
     accelerator.wait_for_everyone()
@@ -538,6 +603,7 @@ def main() -> None:
             config.train_vision,
         )
         accelerator.print(f"Saved alignment delta to {delta_path}")
+        accelerator.print(f"Skipped {skipped_samples:,} overlength training samples")
     accelerator.end_training()
 
 

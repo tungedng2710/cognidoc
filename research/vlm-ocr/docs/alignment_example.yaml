@@ -16,6 +16,8 @@ output_dir: outputs/chandra2-alignment
 min_pixels: 65536
 max_pixels: 589824
 max_sequence_length: 8192
+# "skip" drops targets that do not fit; use "error" to fail fast instead.
+overlength_policy: skip
 attention_implementation: sdpa
 
 batch_size: 2
