@@ -96,6 +96,10 @@ accelerate launch train_sft.py --config configs/sft_local.yaml
 See the [benchmark and document SFT guide](docs/document_sft.md) for smoke tests,
 checkpoint loading, resume, and the required direct-SFT baseline.
 
+SFT uses Unsloth's 16-bit `FastVisionModel` backend by default. TensorBoard is
+enabled for alignment and SFT; run `tensorboard --logdir outputs/chandra2-sft/logs`
+to view the live SFT dashboard. W&B can be selected with `report_to: wandb`.
+
 ## View the masks
 
 Render deterministic side-by-side previews using the same preprocessing and

@@ -4,6 +4,12 @@ After MAE and merger alignment, first compare complete-model generation on a
 held-out set. Only start document SFT after the aligned model improves over the
 MAE-only model and remains competitive with original Chandra.
 
+Install the project with the Unsloth backend and experiment trackers:
+
+```bash
+pip install -e '.[unsloth]'
+```
+
 ## 1. Benchmark alignment
 
 Copy the example and set `dataset` to the paired dataset root:
@@ -55,10 +61,20 @@ Copy and edit the configuration:
 cp docs/sft_example.yaml configs/sft_local.yaml
 ```
 
-The default policy loads base Chandra, then the MAE vision delta, then the
+The default `backend: unsloth` policy loads Chandra through
+`FastVisionModel` in 16-bit precision, then applies the MAE vision delta and the
 alignment merger delta. It freezes the vision encoder, trains the merger, and
-adds LoRA to the Qwen 3.5 language projections. Loss is applied only to the
-assistant JSON response.
+adds Unsloth LoRA to the Qwen 3.5 full-attention, gated-delta, and MLP
+projections. Loss is applied only to the assistant JSON response. The model is
+kept in 16-bit rather than 4-bit so the learned MAE and merger weights are not
+requantized.
+
+Keep `lora_dropout: 0.0`; nonzero LoRA dropout disables part of Unsloth's fast
+LoRA path.
+
+Use `backend: transformers` for the standard `AutoModel` loader fallback. If
+Unsloth is installed, its import-time patches can still be active in that
+process.
 
 Run two steps before a full job:
 
@@ -86,6 +102,42 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch \
   --dynamo_backend no \
   train_sft.py --config configs/sft_local.yaml
 ```
+
+## Live training dashboards
+
+TensorBoard is enabled by default:
+
+```yaml
+report_to: tensorboard
+tracker_project_name: chandra-sft
+tracker_run_name: chandra-sft-run
+```
+
+Start the dashboard in another terminal:
+
+```bash
+tensorboard --logdir outputs/chandra2-sft/logs --port 6006
+```
+
+Then open `http://localhost:6006`. For a remote machine, forward the port with
+SSH, for example `ssh -L 6006:localhost:6006 user@server`.
+
+To use Weights & Biases:
+
+```bash
+wandb login
+```
+
+```yaml
+report_to: wandb
+tracker_project_name: chandra-sft
+tracker_run_name: h200-sft-run-1
+```
+
+Set `report_to: tensorboard,wandb` to log to both, or `report_to: none` to
+disable external trackers. Training/validation loss, both learning rates,
+elapsed time, and the cumulative overlength-sample count are logged. The local
+`metrics.jsonl` file is always retained.
 
 Resume from a full training checkpoint:
 

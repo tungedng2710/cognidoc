@@ -11,6 +11,15 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
+# Unsloth must patch Transformers before Transformers or PEFT is imported.
+try:
+    from unsloth import FastVisionModel as UnslothFastVisionModel
+
+    UNSLOTH_IMPORT_ERROR: Exception | None = None
+except Exception as error:  # pragma: no cover - depends on CUDA/platform support
+    UnslothFastVisionModel = None
+    UNSLOTH_IMPORT_ERROR = error
+
 import torch
 import yaml
 from accelerate import Accelerator
@@ -25,6 +34,11 @@ from transformers import (
 )
 
 from chandra_mae.checkpoint import apply_vision_delta
+from chandra_alignment.tracking import (
+    init_trackers,
+    project_configuration,
+    tracker_names,
+)
 from train_alignment import (
     evaluate,
     get_visual,
@@ -67,6 +81,8 @@ class SFTConfig:
     alignment_delta: str | None = None
     alignment_dir: str = "outputs/chandra2-alignment"
     output_dir: str = "outputs/chandra2-sft"
+    backend: str = "unsloth"
+    unsloth_fullgraph: bool = True
     min_pixels: int = 65_536
     max_pixels: int = 589_824
     max_sequence_length: int = 8_192
@@ -77,7 +93,7 @@ class SFTConfig:
     max_steps: int = 2_000
     lora_rank: int = 8
     lora_alpha: int = 16
-    lora_dropout: float = 0.05
+    lora_dropout: float = 0.0
     lora_target_modules: str = DEFAULT_LORA_TARGETS
     lora_learning_rate: float = 1e-4
     merger_learning_rate: float = 5e-5
@@ -96,6 +112,9 @@ class SFTConfig:
     seed: int = 42
     local_files_only: bool = False
     resume_from: str | None = None
+    report_to: str = "tensorboard"
+    tracker_project_name: str = "chandra-sft"
+    tracker_run_name: str | None = None
 
 
 def parse_args() -> SFTConfig:
@@ -145,11 +164,90 @@ def parse_args() -> SFTConfig:
         parser.error("overlength_policy must be one of: skip, error")
     if config.mixed_precision not in {"no", "fp16", "bf16"}:
         parser.error("mixed_precision must be one of: no, fp16, bf16")
+    if config.backend not in {"unsloth", "transformers"}:
+        parser.error("backend must be one of: unsloth, transformers")
     if not 0.0 <= config.lora_dropout < 1.0:
         parser.error("lora_dropout must be in [0, 1)")
     if not [item for item in config.lora_target_modules.split(",") if item.strip()]:
         parser.error("lora_target_modules cannot be empty")
+    try:
+        tracker_names(config.report_to)
+    except ValueError as error:
+        parser.error(str(error))
     return config
+
+
+def load_model_and_processor(
+    config: SFTConfig, base_model: str, dtype: torch.dtype
+) -> tuple[torch.nn.Module, Any]:
+    if config.backend == "unsloth":
+        if UnslothFastVisionModel is None:
+            raise RuntimeError(
+                "Unsloth could not be imported. Install the Unsloth extra or use "
+                "--backend transformers. Original import error: "
+                f"{UNSLOTH_IMPORT_ERROR}"
+            )
+        model, processor = UnslothFastVisionModel.from_pretrained(
+            model_name=base_model,
+            max_seq_length=config.max_sequence_length,
+            dtype=dtype,
+            load_in_4bit=False,
+            load_in_16bit=True,
+            use_gradient_checkpointing=(
+                "unsloth" if config.gradient_checkpointing else False
+            ),
+            fullgraph=config.unsloth_fullgraph,
+            local_files_only=config.local_files_only,
+        )
+        if not hasattr(processor, "apply_chat_template"):
+            raise RuntimeError("Unsloth did not return a multimodal Chandra processor")
+        return model, processor
+
+    processor = AutoProcessor.from_pretrained(
+        base_model, local_files_only=config.local_files_only
+    )
+    model = AutoModelForImageTextToText.from_pretrained(
+        base_model,
+        dtype=dtype,
+        attn_implementation=config.attention_implementation,
+        local_files_only=config.local_files_only,
+    )
+    return model, processor
+
+
+def add_lora_adapter(
+    model: torch.nn.Module, config: SFTConfig, target_modules: list[str]
+) -> torch.nn.Module:
+    if config.backend == "unsloth":
+        if UnslothFastVisionModel is None:  # Defensive; loader reports the detail.
+            raise RuntimeError("Unsloth is unavailable")
+        return UnslothFastVisionModel.get_peft_model(
+            model,
+            r=config.lora_rank,
+            lora_alpha=config.lora_alpha,
+            lora_dropout=config.lora_dropout,
+            target_modules=target_modules,
+            bias="none",
+            finetune_vision_layers=False,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
+            use_gradient_checkpointing=(
+                "unsloth" if config.gradient_checkpointing else False
+            ),
+            random_state=config.seed,
+        )
+    return get_peft_model(
+        model,
+        LoraConfig(
+            r=config.lora_rank,
+            lora_alpha=config.lora_alpha,
+            lora_dropout=config.lora_dropout,
+            target_modules=target_modules,
+            bias="none",
+            task_type="CAUSAL_LM",
+        ),
+    )
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -253,6 +351,8 @@ def save_sft_artifacts(
     manifest = {
         "format": "chandra-document-sft-v1",
         "base_model": base_model,
+        "backend": config.backend,
+        "unsloth_fullgraph": config.unsloth_fullgraph,
         "load_adapted_vision": config.load_adapted_vision,
         "mae_delta": str(mae_delta) if mae_delta else None,
         "alignment_delta": str(alignment_delta) if alignment_delta else None,
@@ -275,6 +375,8 @@ def main() -> None:
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         step_scheduler_with_optimizer=False,
+        log_with=tracker_names(config.report_to),
+        project_config=project_configuration(config.output_dir),
     )
     set_seed(config.seed + accelerator.process_index)
     base_model, mae_delta, alignment_delta, _ = resolve_sft_inputs(config)
@@ -287,6 +389,8 @@ def main() -> None:
         (output_dir / "sft_config.json").write_text(
             json.dumps(asdict(config), indent=2) + "\n"
         )
+    accelerator.wait_for_everyone()
+    init_trackers(accelerator, config, output_dir)
 
     accelerator.print(f"Base model: {base_model}")
     accelerator.print(
@@ -297,20 +401,12 @@ def main() -> None:
             else "original Chandra (direct-SFT baseline)"
         )
     )
-    processor = AutoProcessor.from_pretrained(
-        base_model, local_files_only=config.local_files_only
-    )
     dtype = {
         "no": torch.float32,
         "fp16": torch.float16,
         "bf16": torch.bfloat16,
     }[config.mixed_precision]
-    model = AutoModelForImageTextToText.from_pretrained(
-        base_model,
-        dtype=dtype,
-        attn_implementation=config.attention_implementation,
-        local_files_only=config.local_files_only,
-    )
+    model, processor = load_model_and_processor(config, base_model, dtype)
     if mae_delta is not None:
         apply_vision_delta(model, mae_delta)
     if alignment_delta is not None:
@@ -319,20 +415,14 @@ def main() -> None:
     target_modules = [
         item.strip() for item in config.lora_target_modules.split(",") if item.strip()
     ]
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            r=config.lora_rank,
-            lora_alpha=config.lora_alpha,
-            lora_dropout=config.lora_dropout,
-            target_modules=target_modules,
-            bias="none",
-            task_type="CAUSAL_LM",
-        ),
-    )
+    model = add_lora_adapter(model, config, target_modules)
     lora_parameters, merger_parameters = configure_sft_parameters(model)
     model.config.use_cache = False
-    if config.gradient_checkpointing:
+    if config.backend == "unsloth":
+        UnslothFastVisionModel.for_training(
+            model, use_gradient_checkpointing=config.gradient_checkpointing
+        )
+    elif config.gradient_checkpointing:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
 
@@ -487,6 +577,7 @@ def main() -> None:
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(metrics) + "\n")
                     progress.write(json.dumps(metrics))
+                accelerator.log(metrics, step=completed_steps)
                 window_loss.zero_()
                 window_microbatches = 0
 
@@ -503,6 +594,7 @@ def main() -> None:
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(metrics) + "\n")
                     progress.write(json.dumps(metrics))
+                accelerator.log(metrics, step=completed_steps)
 
             if completed_steps % config.save_every == 0:
                 checkpoint_dir = output_dir / "checkpoints" / f"step-{completed_steps}"

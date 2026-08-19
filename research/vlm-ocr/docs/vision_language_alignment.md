@@ -290,6 +290,16 @@ accelerate launch train_alignment.py \
   --resume-from outputs/chandra2-alignment/checkpoints/step-250
 ```
 
+TensorBoard logging is enabled by default. View it while training with:
+
+```bash
+tensorboard --logdir outputs/chandra2-alignment/logs --port 6006
+```
+
+Set `report_to: wandb` after running `wandb login`, use
+`report_to: tensorboard,wandb` for both dashboards, or set `report_to: none` to
+disable tracker logging. The JSONL metrics file is written regardless.
+
 Targets that do not fit within `max_sequence_length` are skipped by default,
 before tensors are moved to the GPU. The cumulative count is shown as
 `skipped` in the progress bar and written to `metrics.jsonl`. Keep this policy

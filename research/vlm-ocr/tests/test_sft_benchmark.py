@@ -12,6 +12,7 @@ from benchmark_alignment import (
     evaluate_variant,
     resolve_artifacts,
 )
+from chandra_alignment.tracking import tracker_names
 from chandra_alignment.metrics import (
     aggregate_scores,
     extract_json,
@@ -67,6 +68,16 @@ def test_batches_obeys_limit():
     result = list(batches(examples, batch_size=2, limit=5))
     assert [len(batch) for batch in result] == [2, 2, 1]
     assert [item["value"] for batch in result for item in batch] == list(range(5))
+
+
+def test_tracker_selection():
+    assert tracker_names("tensorboard,wandb,tensorboard") == [
+        "tensorboard",
+        "wandb",
+    ]
+    assert tracker_names("none") == []
+    with pytest.raises(ValueError, match="Unsupported tracker"):
+        tracker_names("unknown")
 
 
 class FakeGenerationProcessor:

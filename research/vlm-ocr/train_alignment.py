@@ -33,6 +33,11 @@ from chandra_alignment import (
     AlignmentCollator,
     PairedJsonDataset,
 )
+from chandra_alignment.tracking import (
+    init_trackers,
+    project_configuration,
+    tracker_names,
+)
 from chandra_mae.checkpoint import apply_vision_delta
 
 
@@ -73,6 +78,9 @@ class AlignmentConfig:
     seed: int = 42
     local_files_only: bool = False
     resume_from: str | None = None
+    report_to: str = "tensorboard"
+    tracker_project_name: str = "chandra-alignment"
+    tracker_run_name: str | None = None
 
 
 def parse_args() -> AlignmentConfig:
@@ -120,6 +128,10 @@ def parse_args() -> AlignmentConfig:
         parser.error("mixed_precision must be one of: no, fp16, bf16")
     if config.overlength_policy not in {"skip", "error"}:
         parser.error("overlength_policy must be one of: skip, error")
+    try:
+        tracker_names(config.report_to)
+    except ValueError as error:
+        parser.error(str(error))
     return config
 
 
@@ -352,6 +364,8 @@ def main() -> None:
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         step_scheduler_with_optimizer=False,
+        log_with=tracker_names(config.report_to),
+        project_config=project_configuration(config.output_dir),
     )
     set_seed(config.seed + accelerator.process_index)
     base_model, mae_delta, mae_manifest = resolve_model_inputs(config)
@@ -363,6 +377,8 @@ def main() -> None:
         (output_dir / "alignment_config.json").write_text(
             json.dumps(asdict(config), indent=2) + "\n"
         )
+    accelerator.wait_for_everyone()
+    init_trackers(accelerator, config, output_dir)
 
     accelerator.print(f"Base model: {base_model}")
     accelerator.print(f"MAE delta: {mae_delta}")
@@ -551,6 +567,7 @@ def main() -> None:
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(metrics) + "\n")
                     progress.write(json.dumps(metrics))
+                accelerator.log(metrics, step=completed_steps)
                 window_loss.zero_()
                 window_microbatches = 0
 
@@ -567,6 +584,7 @@ def main() -> None:
                     with (output_dir / "metrics.jsonl").open("a") as handle:
                         handle.write(json.dumps(evaluation_metrics) + "\n")
                     progress.write(json.dumps(evaluation_metrics))
+                accelerator.log(evaluation_metrics, step=completed_steps)
 
             if completed_steps % config.save_every == 0:
                 checkpoint_dir = output_dir / "checkpoints" / f"step-{completed_steps}"
