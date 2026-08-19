@@ -83,6 +83,19 @@ cp docs/alignment_example.yaml configs/alignment_local.yaml
 accelerate launch train_alignment.py --config configs/alignment_local.yaml
 ```
 
+After alignment, benchmark base/MAE/aligned generation and train document SFT:
+
+```bash
+cp docs/benchmark_alignment_example.yaml configs/benchmark_alignment_local.yaml
+python benchmark_alignment.py --config configs/benchmark_alignment_local.yaml
+
+cp docs/sft_example.yaml configs/sft_local.yaml
+accelerate launch train_sft.py --config configs/sft_local.yaml
+```
+
+See the [benchmark and document SFT guide](docs/document_sft.md) for smoke tests,
+checkpoint loading, resume, and the required direct-SFT baseline.
+
 ## View the masks
 
 Render deterministic side-by-side previews using the same preprocessing and
@@ -96,5 +109,5 @@ python visualize_masks.py --count 4 --seed 42 --output previews/masked_samples.p
 
 ```bash
 pytest -q
-python -m compileall -q chandra_alignment chandra_mae train_alignment.py train_mae.py
+python -m compileall -q chandra_alignment chandra_mae benchmark_alignment.py train_alignment.py train_mae.py train_sft.py
 ```
