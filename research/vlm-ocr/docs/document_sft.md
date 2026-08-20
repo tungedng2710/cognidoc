@@ -177,6 +177,22 @@ apply_vision_delta(model, "outputs/chandra2-sft/sft_merger_delta.safetensors")
 model = PeftModel.from_pretrained(model, "outputs/chandra2-sft/lora_adapter")
 ```
 
+For single-image inference, use the included CLI. It reads the manifest and
+applies every checkpoint in the required order automatically:
+
+```bash
+conda activate tungn197
+CUDA_VISIBLE_DEVICES=0 python infer_single.py test_samples/test1.png \
+  --sft-dir outputs/chandra2-sft \
+  --output outputs/chandra2-sft/test1-inference.json \
+  --max-new-tokens 8192 \
+  --require-valid-json
+```
+
+The command prints and saves the raw model response, parsed JSON, validity,
+generation time, token count, and throughput. Omit `--require-valid-json` when
+you want to retain invalid or truncated output without a nonzero exit status.
+
 ## 4. Train the fair baseline
 
 Use the identical SFT dataset and settings but initialize from original Chandra:
