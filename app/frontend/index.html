@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Fast document parsing with MonkeyOCRv2">
+  <title>MonkeyOCR — Document parser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">M</span><span>MONKEY<span>OCR</span></span></a>
+    <div class="service-status" id="service-status"><span class="status-dot"></span><span id="service-label">Connecting</span></div>
+  </header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">DOCUMENT INTELLIGENCE / V2</p><h1>Turn complex documents<br>into structured data.</h1></div>
+      <p class="lede">Upload an image or PDF. MonkeyOCR preserves reading order, tables, formulas, and layout metadata in one raw response.</p>
+    </section>
+    <section class="workspace">
+      <article class="panel source-panel">
+        <div class="panel-header"><div><p class="step">01 / INPUT</p><h2>Source document</h2></div><button class="text-button" id="sample-button">Load sample</button></div>
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload a document">
+          <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,application/pdf" hidden>
+          <div class="empty-state" id="empty-state">
+            <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            <strong>Drop a document here</strong><span>or click to browse · PNG, JPG, WebP, TIFF, PDF</span>
+          </div>
+          <img id="image-preview" alt="Selected document preview" hidden>
+          <iframe id="pdf-preview" title="Selected PDF preview" hidden></iframe>
+        </div>
+        <div class="file-meta" id="file-meta" hidden>
+          <div><span class="file-icon">DOC</span><div><strong id="file-name"></strong><span id="file-size"></span></div></div>
+          <button id="remove-button" aria-label="Remove selected file">×</button>
+        </div>
+      </article>
+      <article class="panel result-panel">
+        <div class="panel-header"><div><p class="step">02 / OUTPUT</p><h2>Parsed content</h2></div><div class="result-actions"><button class="icon-button" id="copy-button" disabled>Copy</button><button class="icon-button" id="download-button" disabled>Download</button></div></div>
+        <div class="output-shell">
+          <div class="output-empty" id="output-empty"><span class="output-glyph">{ }</span><p>Your parsed document will appear here.</p></div>
+          <pre id="output" hidden></pre>
+          <div class="processing" id="processing" hidden><div class="scan-line"></div><span>Reading document structure…</span></div>
+        </div>
+        <div class="result-meta"><span id="result-stats">Awaiting document</span><span>RAW / UTF-8</span></div>
+      </article>
+    </section>
+    <section class="control-bar">
+      <div class="run-status" id="run-status"><span></span><p id="run-label">Sample ready</p></div>
+      <button class="clear-button" id="clear-button">Clear</button>
+      <button class="run-button" id="run-button"><span>Run OCR</span><span>↗</span></button>
+    </section>
+  </main>
+  <footer><span>MONKEYOCRV2</span><span>FASTAPI / V1.0</span></footer>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
