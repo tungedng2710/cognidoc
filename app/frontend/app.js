@@ -9,9 +9,12 @@ const ui = {
   selectNone: $("#select-none-button"), outputEmpty: $("#output-empty"),
   processing: $("#processing"), markdown: $("#markdown-preview"),
   layout: $("#layout-preview"), layoutImage: $("#layout-image"),
+  layoutStage: $("#layout-stage"), layoutCanvas: $("#layout-canvas"),
   layoutOverlay: $("#layout-overlay"), layoutLegend: $("#layout-legend"),
   resultToolbar: $("#result-toolbar"), resultPage: $("#result-page"),
   markdownTab: $("#markdown-tab"), layoutTab: $("#layout-tab"),
+  zoomControls: $("#zoom-controls"), zoomOut: $("#zoom-out-button"),
+  zoomReset: $("#zoom-reset-button"), zoomIn: $("#zoom-in-button"),
   copy: $("#copy-button"), download: $("#download-button"),
   resultStats: $("#result-stats"), runStatus: $("#run-status"),
   runLabel: $("#run-label"), serviceStatus: $("#service-status"),
@@ -25,8 +28,14 @@ let parsedContent = "";
 let pageResults = [];
 let activeView = "markdown";
 let fileVersion = 0;
+let layoutZoom = 1;
+let layoutBaseWidth = 0;
+let layoutBaseHeight = 0;
 
 const layoutColors = ["#19a974", "#e07a42", "#5c7cda", "#b45ac9", "#d4a72c", "#de5472"];
+const minLayoutZoom = 0.5;
+const maxLayoutZoom = 3;
+const layoutZoomStep = 0.25;
 
 function formatBytes(bytes) {
   return bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
@@ -67,6 +76,10 @@ function clearResult() {
   ui.markdown.replaceChildren();
   ui.markdown.hidden = true;
   ui.layout.hidden = true;
+  ui.zoomControls.hidden = true;
+  layoutZoom = 1;
+  layoutBaseWidth = 0;
+  layoutBaseHeight = 0;
   ui.outputEmpty.hidden = false;
   ui.outputEmpty.querySelector("p").textContent = "Your parsed document will appear here.";
   ui.processing.hidden = true;
@@ -207,7 +220,42 @@ function colorForLabel(label, labels) {
   return layoutColors[labels.indexOf(label) % layoutColors.length];
 }
 
+function applyLayoutZoom(center = true) {
+  if (!layoutBaseWidth || !layoutBaseHeight) return;
+  ui.layoutCanvas.style.width = `${layoutBaseWidth * layoutZoom}px`;
+  ui.layoutCanvas.style.height = `${layoutBaseHeight * layoutZoom}px`;
+  ui.zoomReset.textContent = `${Math.round(layoutZoom * 100)}%`;
+  ui.zoomOut.disabled = layoutZoom <= minLayoutZoom;
+  ui.zoomIn.disabled = layoutZoom >= maxLayoutZoom;
+  if (center) {
+    requestAnimationFrame(() => {
+      ui.layoutStage.scrollLeft = (ui.layoutStage.scrollWidth - ui.layoutStage.clientWidth) / 2;
+      ui.layoutStage.scrollTop = (ui.layoutStage.scrollHeight - ui.layoutStage.clientHeight) / 2;
+    });
+  }
+}
+
+function fitLayoutImage() {
+  if (!ui.layoutImage.naturalWidth || !ui.layoutStage.clientWidth || !ui.layoutStage.clientHeight) return;
+  const availableWidth = Math.max(1, ui.layoutStage.clientWidth - 32);
+  const availableHeight = Math.max(1, ui.layoutStage.clientHeight - 32);
+  const imageRatio = ui.layoutImage.naturalWidth / ui.layoutImage.naturalHeight;
+  layoutBaseWidth = Math.min(ui.layoutImage.naturalWidth, availableWidth, availableHeight * imageRatio);
+  layoutBaseHeight = layoutBaseWidth / imageRatio;
+  applyLayoutZoom(false);
+}
+
+function setLayoutZoom(value) {
+  layoutZoom = Math.max(minLayoutZoom, Math.min(maxLayoutZoom, value));
+  applyLayoutZoom();
+}
+
 function renderLayout(page) {
+  layoutZoom = 1;
+  layoutBaseWidth = 0;
+  layoutBaseHeight = 0;
+  ui.zoomReset.textContent = "100%";
+  ui.layoutImage.onload = fitLayoutImage;
   ui.layoutImage.src = page.image_url;
   ui.layoutOverlay.replaceChildren();
   ui.layoutLegend.replaceChildren();
@@ -264,6 +312,8 @@ function setActiveView(view) {
   ui.layoutTab.setAttribute("aria-selected", String(!markdownActive));
   ui.markdown.hidden = !markdownActive;
   ui.layout.hidden = markdownActive;
+  ui.zoomControls.hidden = markdownActive;
+  if (!markdownActive) fitLayoutImage();
 }
 
 function populateResults(data) {
@@ -348,6 +398,14 @@ ui.selectAll.addEventListener("click", () => {
 ui.selectNone.addEventListener("click", () => { selectedPages.clear(); updatePageSelection(); });
 ui.markdownTab.addEventListener("click", () => setActiveView("markdown"));
 ui.layoutTab.addEventListener("click", () => setActiveView("layout"));
+ui.zoomOut.addEventListener("click", () => setLayoutZoom(layoutZoom - layoutZoomStep));
+ui.zoomReset.addEventListener("click", () => setLayoutZoom(1));
+ui.zoomIn.addEventListener("click", () => setLayoutZoom(layoutZoom + layoutZoomStep));
+ui.layoutStage.addEventListener("wheel", (event) => {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  event.preventDefault();
+  setLayoutZoom(layoutZoom + (event.deltaY < 0 ? layoutZoomStep : -layoutZoomStep));
+}, { passive: false });
 ui.resultPage.addEventListener("change", () => showResultPage(ui.resultPage.value));
 ui.copy.addEventListener("click", async () => {
   await navigator.clipboard.writeText(parsedContent); ui.copy.textContent = "Copied";
@@ -358,6 +416,10 @@ ui.download.addEventListener("click", () => {
   const link = document.createElement("a"); link.href = url;
   link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.md`;
   link.click(); URL.revokeObjectURL(url);
+});
+
+window.addEventListener("resize", () => {
+  if (activeView === "layout" && pageResults.length) fitLayoutImage();
 });
 
 clearResult(); checkHealth();

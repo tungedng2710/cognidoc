@@ -1,4 +1,4 @@
-# MonkeyOCR document parser
+# ParseAnything
 
 A production-shaped FastAPI application with a responsive web frontend for
 parsing images and PDFs through a MonkeyOCRv2 vLLM endpoint.

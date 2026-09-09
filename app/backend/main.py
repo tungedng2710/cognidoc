@@ -375,7 +375,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="MonkeyOCR Document Parser",
+    title="ParseAnything",
     version="1.1.0",
     description="Image and PDF parsing backed by MonkeyOCRv2.",
     lifespan=lifespan,
