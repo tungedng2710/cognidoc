@@ -5,6 +5,24 @@ parsing images and PDFs through a MonkeyOCRv2 vLLM endpoint.
 
 ## Start
 
+Create the local configuration first:
+
+```bash
+cp .env.example .env
+```
+
+Set `VLLM_URL` in `.env` to the OpenAI-compatible `/v1` endpoint, then run with
+Docker Compose:
+
+```bash
+docker compose up --build -d
+docker compose logs -f parseanything
+```
+
+Open <http://127.0.0.1:8000>. Stop the service with `docker compose down`.
+
+For local development without Docker:
+
 ```bash
 source /media/drive-2t/miniconda3/etc/profile.d/conda.sh
 conda activate tungn197
@@ -12,22 +30,26 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open <http://127.0.0.1:8000>. API documentation is available at
-<http://127.0.0.1:8000/docs>.
+API documentation is available at <http://127.0.0.1:8000/docs>.
 
 ## Configuration
 
 | Variable | Default |
 | --- | --- |
-| `MONKEYOCR_BASE_URL` | Hosted endpoint ending in `/v1` |
+| `VLLM_URL` | `http://127.0.0.1:8888/v1` outside Docker |
 | `MONKEYOCR_MODEL` | `MonkeyOCRv2` |
+| `MONKEYOCR_API_KEY` | `not-required` |
 | `MONKEYOCR_PROMPT` | Official end-to-end parsing prompt |
 | `MAX_UPLOAD_MB` | `30` |
 | `MAX_PDF_PAGES` | `20` |
 | `MAX_PREVIEW_SIDE` | `1200` |
 | `OCR_CONCURRENCY` | `3` |
 | `OCR_TIMEOUT_SECONDS` | `300` |
-| `HOST` / `PORT` | `127.0.0.1` / `8000` |
+| `HOST` / `PORT` | `127.0.0.1` / `8000` (`PORT` is the published port in Compose) |
+
+`MONKEYOCR_BASE_URL` remains accepted as a fallback for existing deployments.
+The Compose example uses `host.docker.internal` so a vLLM server running on the
+Docker host is reachable from the application container.
 
 The UI prepares thumbnail previews for multi-page PDFs and TIFFs so individual
 pages can be selected before OCR. The backend parses MonkeyOCR's JSON or

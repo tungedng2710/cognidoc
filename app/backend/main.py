@@ -12,6 +12,7 @@ from pathlib import Path
 from time import perf_counter
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -23,9 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = ROOT / "frontend"
 SAMPLE_IMAGE = ROOT / "test_samples" / "page-62.png"
 
+# Local development reads app/.env. In containers, Compose injects the same
+# variables into the process; existing environment variables take precedence.
+load_dotenv(ROOT / ".env", override=False)
+
 API_BASE_URL = os.getenv(
-    "MONKEYOCR_BASE_URL",
-    "https://8890--main--frontier--idp-lab.coder.vts-ai.space/v1",
+    "VLLM_URL",
+    os.getenv("MONKEYOCR_BASE_URL", "http://127.0.0.1:8888/v1"),
 ).rstrip("/")
 MODEL = os.getenv("MONKEYOCR_MODEL", "MonkeyOCRv2")
 PROMPT = os.getenv(

@@ -1,8 +1,13 @@
 """Development entry point for the MonkeyOCR FastAPI application."""
 
 import os
+from pathlib import Path
 
 import uvicorn
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
 
 if __name__ == "__main__":
