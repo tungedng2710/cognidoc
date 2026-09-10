@@ -50,6 +50,9 @@ API documentation is available at <http://127.0.0.1:8000/docs>.
 | `PDF_RENDER_DPI` | `200` |
 | `OCR_CONCURRENCY` | `3` |
 | `OCR_TIMEOUT_SECONDS` | `300` |
+| `OCR_HTTP_RETRIES` | `5` |
+| `OCR_RETRY_BACKOFF_SECONDS` | `1` |
+| `OCR_REPEAT_RETRIES` | `3` |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` (`PORT` is the published port in Compose) |
 
 `MONKEYOCR_BASE_URL` remains accepted as a fallback for existing deployments.
@@ -65,6 +68,8 @@ pipeline detects the ordered page layout and recognizes each crop with the
 prompt appropriate for text, formulas, or OTSL tables.
 Picture crops are embedded directly in the Markdown. Set
 `MONKEYOCR_PIPELINE_MODE` to `end2end` to use a single request per page instead.
+Degenerate repeated-token responses are retried using the same progressively
+higher-temperature strategy as the reference pipeline.
 
 Bounding boxes are returned in page-pixel coordinates together with the page
 dimensions. Results can be switched between sanitized Markdown, the zoomable

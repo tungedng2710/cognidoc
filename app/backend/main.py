@@ -58,6 +58,9 @@ MAX_PREVIEW_SIDE = int(os.getenv("MAX_PREVIEW_SIDE", "1200"))
 PDF_RENDER_DPI = max(72, int(os.getenv("PDF_RENDER_DPI", "200")))
 OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "3"))
 REQUEST_TIMEOUT = float(os.getenv("OCR_TIMEOUT_SECONDS", "300"))
+HTTP_MAX_RETRIES = max(0, int(os.getenv("OCR_HTTP_RETRIES", "5")))
+HTTP_RETRY_BACKOFF = max(0.0, float(os.getenv("OCR_RETRY_BACKOFF_SECONDS", "1")))
+REPEAT_MAX_RETRIES = max(0, int(os.getenv("OCR_REPEAT_RETRIES", "3")))
 
 MONKEYOCR_PROMPTS = {
     "Caption": "Please output the text content from the image.",
@@ -708,33 +711,41 @@ async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
     return data, content_type
 
 
-async def _request_ocr(
+def _detect_repeat_token(
+    output: str,
+    base_max_repeats: int = 4,
+    window_size: int = 500,
+    cut_from_end: int = 0,
+    scaling_factor: float = 3.0,
+) -> bool:
+    """Detect the repeated suffix failure mode produced by MonkeyOCR."""
+    if cut_from_end > 0:
+        output = output[:-cut_from_end]
+    if not output:
+        return False
+
+    for sequence_length in range(1, min(window_size // 2, len(output)) + 1):
+        sequence = output[-sequence_length:]
+        max_repeats = int(base_max_repeats * (1 + scaling_factor / sequence_length))
+        if output.endswith(sequence * (max_repeats + 1)):
+            return True
+    return False
+
+
+def _should_retry_repeated_output(output: str) -> bool:
+    return _detect_repeat_token(output) or (
+        len(output) > 50 and _detect_repeat_token(output, cut_from_end=50)
+    )
+
+
+async def _post_ocr_payload(
     client: httpx.AsyncClient,
-    image: Image.Image,
-    prompt: str,
+    payload: dict,
     page_number: int,
     semaphore: asyncio.Semaphore,
-    *,
-    max_tokens: int | None = None,
 ) -> str:
-    payload = {
-        "model": MODEL,
-        "temperature": 0,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": _image_data_uri(image)}},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ],
-    }
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
-
     last_error: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(HTTP_MAX_RETRIES + 1):
         try:
             async with semaphore:
                 response = await client.post("/chat/completions", json=payload)
@@ -752,9 +763,9 @@ async def _request_ocr(
             retryable = not isinstance(
                 exc, httpx.HTTPStatusError
             ) or exc.response.status_code in {429, 500, 502, 503, 504}
-            if not retryable or attempt == 2:
+            if not retryable or attempt == HTTP_MAX_RETRIES:
                 break
-            await asyncio.sleep(0.5 * (2**attempt))
+            await asyncio.sleep(min(HTTP_RETRY_BACKOFF * (2**attempt), 30.0))
         except (KeyError, TypeError, ValueError) as exc:
             last_error = exc
             break
@@ -767,6 +778,51 @@ async def _request_ocr(
     else:
         detail += " The OCR service returned an unexpected response."
     raise HTTPException(status_code=502, detail=detail)
+
+
+async def _request_ocr(
+    client: httpx.AsyncClient,
+    image: Image.Image,
+    prompt: str,
+    page_number: int,
+    semaphore: asyncio.Semaphore,
+    *,
+    max_tokens: int | None = None,
+    retry_repetition: bool = True,
+) -> str:
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": _image_data_uri(image)}},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+
+    content = ""
+    repeat_attempts = REPEAT_MAX_RETRIES if retry_repetition else 0
+    for attempt in range(repeat_attempts + 1):
+        request_payload = {
+            **payload,
+            "temperature": 0 if attempt == 0 else min(0.2 * attempt, 0.8),
+        }
+        if attempt > 0:
+            request_payload["top_p"] = 0.95
+        content = await _post_ocr_payload(
+            client,
+            request_payload,
+            page_number,
+            semaphore,
+        )
+        if not _should_retry_repeated_output(content):
+            return content
+    return content
 
 
 def _crop_element(image: Image.Image, element: LayoutElement) -> Image.Image:
@@ -848,6 +904,7 @@ async def _ocr_page(
         page_number,
         semaphore,
         max_tokens=4096,
+        retry_repetition=False,
     )
     layout = _parse_layout(raw, image.size, include_content=False)
     return raw, await _recognize_layout_elements(

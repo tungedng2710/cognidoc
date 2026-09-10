@@ -9,6 +9,7 @@ from PIL import Image
 from backend.main import (
     MAX_IMAGE_SIDE,
     MIN_IMAGE_PIXELS,
+    _detect_repeat_token,
     _elements_to_markdown,
     _map_bbox_to_image,
     _otsl_to_html,
@@ -81,6 +82,41 @@ def test_parse_image():
         [10, 20, 400, 80], page["image_width"], page["image_height"]
     )
     assert page["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_repeated_recognition_output_is_retried():
+    recognition_temperatures = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        prompt = payload["messages"][0]["content"][1]["text"]
+        if "categories and coordinates" in prompt:
+            content = "[{'bbox': [0, 0, 1000, 1000], 'label': 'Text'}]"
+        else:
+            recognition_temperatures.append(payload["temperature"])
+            content = (
+                "10\n" * 200 if len(recognition_temperatures) == 1 else "Recovered text"
+            )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
+
+    with TestClient(app) as client:
+        real_client = app.state.ocr_client
+        app.state.ocr_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(upstream), base_url="https://ocr.test/v1"
+        )
+        try:
+            response = client.post(
+                "/api/parse", files={"file": ("page.png", _png(), "image/png")}
+            )
+        finally:
+            app.state.ocr_client = real_client
+
+    assert response.status_code == 200
+    assert response.json()["content"] == "Recovered text"
+    assert recognition_temperatures == [0, 0.2]
+    assert _detect_repeat_token("10\n" * 200)
 
 
 def test_rejects_unsupported_type():
