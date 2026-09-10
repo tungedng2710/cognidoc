@@ -259,3 +259,8 @@ unsloth*
 !src/data_studio/apps/web/package-lock.json
 *.sh
 asssets/test_samples
+
+# ParseAnything container configuration
+/app/.env
+!/app/.env.example
+!/app/.dockerignore
