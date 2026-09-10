@@ -85,6 +85,7 @@ class LayoutElement(BaseModel):
     bbox: list[float] = Field(min_length=4, max_length=4)
     label: str
     content: str
+    included_in_markdown: bool = True
 
 
 class PageResult(BaseModel):
@@ -493,7 +494,19 @@ def _parse_layout(
             continue
         seen.add(identity)
         text = item.get("content", "")
-        elements.append(LayoutElement(bbox=coords, label=item["label"], content=text))
+        label = item["label"]
+        included_in_markdown = KEEP_HEADER_FOOTER or _normalized_label(label) not in {
+            "page-header",
+            "page-footer",
+        }
+        elements.append(
+            LayoutElement(
+                bbox=coords,
+                label=label,
+                content=text,
+                included_in_markdown=included_in_markdown,
+            )
+        )
     return elements
 
 
@@ -711,10 +724,10 @@ def _elements_to_markdown(elements: list[LayoutElement], fallback: str) -> str:
 
     blocks: list[str] = []
     for element in elements:
-        if not KEEP_HEADER_FOOTER and _normalized_label(element.label) in {
-            "page-header",
-            "page-footer",
-        }:
+        if not element.included_in_markdown or (
+            not KEEP_HEADER_FOOTER
+            and _normalized_label(element.label) in {"page-header", "page-footer"}
+        ):
             continue
         content = _format_element_content(element)
         if not content:
@@ -890,7 +903,10 @@ async def _recognize_layout_elements(
                     max_tokens=4096 if element.label == "Table" else 5000,
                 )
                 source = LayoutElement(
-                    bbox=element.bbox, label=element.label, content=raw_content
+                    bbox=element.bbox,
+                    label=element.label,
+                    content=raw_content,
+                    included_in_markdown=element.included_in_markdown,
                 )
                 content = _format_element_content(source, crop)
             elif _normalized_label(element.label) in {"picture", "image", "figure"}:
@@ -898,7 +914,10 @@ async def _recognize_layout_elements(
             else:
                 content = ""
             return LayoutElement(
-                bbox=element.bbox, label=element.label, content=content
+                bbox=element.bbox,
+                label=element.label,
+                content=content,
+                included_in_markdown=element.included_in_markdown,
             )
         finally:
             crop.close()
@@ -931,6 +950,7 @@ async def _ocr_page(
                         bbox=element.bbox,
                         label=element.label,
                         content=_format_element_content(element, crop),
+                        included_in_markdown=element.included_in_markdown,
                     )
                 )
             finally:

@@ -74,7 +74,9 @@ higher-temperature strategy as the reference pipeline.
 
 Bounding boxes are returned in page-pixel coordinates together with the page
 dimensions. Results can be switched between sanitized Markdown, the zoomable
-layout overlay, and raw Markdown; Markdown can also be copied or downloaded.
+layout overlay, and raw Markdown. Click a detected box to edit its content or
+change whether it appears in Markdown. Saved edits immediately update the
+preview, copied text, and downloadable Markdown and structured JSON files.
 
 ## API
 

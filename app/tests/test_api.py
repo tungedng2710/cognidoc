@@ -323,6 +323,19 @@ def test_layout_parser_deduplicates_repeated_boxes():
     assert len(_parse_layout(repeated)) == 1
 
 
+def test_layout_elements_expose_markdown_inclusion():
+    raw = (
+        "[{'bbox': [0, 0, 1000, 100], 'label': 'Page-header', "
+        "'content': 'Header'}, {'bbox': [0, 100, 1000, 900], "
+        "'label': 'Text', 'content': 'Body'}]"
+    )
+
+    elements = _parse_layout(raw)
+
+    assert [element.included_in_markdown for element in elements] == [False, True]
+    assert _elements_to_markdown(elements, raw) == "Body"
+
+
 def test_otsl_tables_are_rendered_as_html():
     assert _otsl_to_html("<fcel>Name<fcel>Value<nl><fcel>A<fcel>1") == (
         "<table><tr><td>Name</td><td>Value</td></tr>"

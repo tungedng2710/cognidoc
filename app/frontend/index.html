@@ -48,7 +48,7 @@
       <article class="panel result-panel">
         <div class="panel-header result-header">
           <div><p class="step">02 / OUTPUT</p><h2>Parsed content</h2></div>
-          <div class="result-actions"><button class="icon-button" id="copy-button" disabled>Copy</button><button class="icon-button" id="download-button" disabled>Download</button></div>
+          <div class="result-actions"><button class="icon-button" id="copy-button" disabled>Copy</button><button class="icon-button" id="download-button" disabled>Markdown</button><button class="icon-button" id="json-download-button" disabled>JSON</button></div>
         </div>
         <div class="result-toolbar" id="result-toolbar" hidden>
           <div class="view-tabs" role="tablist" aria-label="Result view">
@@ -75,6 +75,15 @@
             </div>
             <div class="layout-legend" id="layout-legend"></div>
           </div>
+          <section class="element-editor" id="element-editor" hidden aria-label="Edit detected content">
+            <div class="element-editor-header">
+              <div><span>Edit detected content</span><strong id="element-editor-title"></strong></div>
+              <button id="element-editor-close" type="button" aria-label="Close editor">×</button>
+            </div>
+            <textarea id="element-content-input" spellcheck="true" aria-label="Detected content"></textarea>
+            <label class="include-control"><input id="element-include-input" type="checkbox"> Include this element in Markdown</label>
+            <div class="element-editor-actions"><button id="element-editor-cancel" type="button">Cancel</button><button id="element-editor-save" type="button">Save changes</button></div>
+          </section>
           <div class="processing" id="processing" hidden><div class="scan-line"></div><span>Reading document structure…</span></div>
         </div>
         <div class="result-meta"><span id="result-stats">Awaiting document</span><span>MARKDOWN / UTF-8</span></div>

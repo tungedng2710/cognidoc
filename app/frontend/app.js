@@ -17,9 +17,14 @@ const ui = {
   zoomControls: $("#zoom-controls"), zoomOut: $("#zoom-out-button"),
   zoomReset: $("#zoom-reset-button"), zoomIn: $("#zoom-in-button"),
   copy: $("#copy-button"), download: $("#download-button"),
+  jsonDownload: $("#json-download-button"),
   resultStats: $("#result-stats"), runStatus: $("#run-status"),
   runLabel: $("#run-label"), serviceStatus: $("#service-status"),
   serviceLabel: $("#service-label"),
+  elementEditor: $("#element-editor"), editorTitle: $("#element-editor-title"),
+  editorContent: $("#element-content-input"), editorInclude: $("#element-include-input"),
+  editorClose: $("#element-editor-close"), editorCancel: $("#element-editor-cancel"),
+  editorSave: $("#element-editor-save"),
 };
 
 let selectedFile = null;
@@ -27,6 +32,9 @@ let previewUrl = null;
 let selectedPages = new Set();
 let parsedContent = "";
 let pageResults = [];
+let resultMetadata = null;
+let editingElement = null;
+let resultEdited = false;
 let activeView = "markdown";
 let fileVersion = 0;
 let layoutZoom = 1;
@@ -72,8 +80,11 @@ function clearFile() {
 }
 
 function clearResult() {
+  closeElementEditor();
   parsedContent = "";
   pageResults = [];
+  resultMetadata = null;
+  resultEdited = false;
   ui.markdown.replaceChildren();
   ui.raw.textContent = "";
   ui.raw.hidden = true;
@@ -89,6 +100,7 @@ function clearResult() {
   ui.resultToolbar.hidden = true;
   ui.copy.disabled = true;
   ui.download.disabled = true;
+  ui.jsonDownload.disabled = true;
   ui.resultStats.textContent = "Awaiting document";
 }
 
@@ -232,6 +244,54 @@ function colorForLabel(label, labels) {
   return layoutColors[labels.indexOf(label) % layoutColors.length];
 }
 
+function elementIsIncluded(element) {
+  if (typeof element.included_in_markdown === "boolean") return element.included_in_markdown;
+  return !["page-header", "page-footer"].includes(element.label.trim().toLowerCase().replace(/[\s_]+/g, "-"));
+}
+
+function closeElementEditor() {
+  editingElement = null;
+  ui.elementEditor.hidden = true;
+  ui.layoutOverlay?.querySelectorAll(".detection.selected").forEach((group) => group.classList.remove("selected"));
+}
+
+function openElementEditor(page, index) {
+  const element = page.elements[index];
+  if (!element) return;
+  editingElement = { pageNumber: page.page_number, index };
+  ui.editorTitle.textContent = `Page ${page.page_number} · ${index + 1} · ${element.label}`;
+  ui.editorContent.value = element.content || "";
+  ui.editorInclude.checked = elementIsIncluded(element);
+  ui.elementEditor.hidden = false;
+  ui.layoutOverlay.querySelectorAll(".detection").forEach((group) => {
+    group.classList.toggle("selected", Number(group.dataset.elementIndex) === index);
+  });
+  requestAnimationFrame(() => ui.editorContent.focus());
+}
+
+function pageMarkdownFromElements(page) {
+  return page.elements
+    .filter(elementIsIncluded)
+    .map((element) => (element.content || "").trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .replace(/\uFFFD/g, "")
+    .trim();
+}
+
+function rebuildDocumentContent() {
+  pageResults.forEach((page) => { page.markdown = pageMarkdownFromElements(page); });
+  parsedContent = pageResults.length === 1
+    ? pageResults[0].markdown
+    : pageResults.map((page) => `<!-- Page ${page.page_number} -->\n\n${page.markdown}`).join("\n\n");
+}
+
+function updateResultStats() {
+  if (!resultMetadata) return;
+  const edited = resultEdited ? " · EDITED" : "";
+  ui.resultStats.textContent = `${resultMetadata.page_count} OF ${resultMetadata.source_page_count} PAGE${resultMetadata.source_page_count === 1 ? "" : "S"} · ${parsedContent.length.toLocaleString()} CHAR · ${resultMetadata.elapsed_seconds.toFixed(2)} SEC${edited}`;
+}
+
 function applyLayoutZoom(center = true) {
   if (!layoutBaseWidth || !layoutBaseHeight) return;
   ui.layoutCanvas.style.width = `${layoutBaseWidth * layoutZoom}px`;
@@ -282,6 +342,13 @@ function renderLayout(page) {
     const color = colorForLabel(element.label, labels);
     const group = document.createElementNS(svgNs, "g");
     group.classList.add("detection");
+    group.dataset.elementIndex = index;
+    group.setAttribute("tabindex", "0");
+    group.setAttribute("role", "button");
+    group.setAttribute("aria-label", `Edit ${element.label} element ${index + 1}`);
+    if (editingElement?.pageNumber === page.page_number && editingElement.index === index) {
+      group.classList.add("selected");
+    }
     const rect = document.createElementNS(svgNs, "rect");
     rect.setAttribute("x", x1); rect.setAttribute("y", y1);
     rect.setAttribute("width", x2 - x1); rect.setAttribute("height", y2 - y1);
@@ -293,9 +360,22 @@ function renderLayout(page) {
     const title = document.createElementNS(svgNs, "title");
     title.textContent = element.content.startsWith("![image](data:") ? element.label : (element.content || element.label);
     group.append(rect, tag, title);
+    group.addEventListener("click", () => openElementEditor(page, index));
+    group.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openElementEditor(page, index);
+      }
+    });
     ui.layoutOverlay.append(group);
   });
 
+  if (page.elements.length) {
+    const hint = document.createElement("span");
+    hint.className = "layout-hint";
+    hint.textContent = "Click a box to edit";
+    ui.layoutLegend.append(hint);
+  }
   labels.forEach((label) => {
     const item = document.createElement("span");
     const dot = document.createElement("i");
@@ -311,6 +391,7 @@ function renderLayout(page) {
 }
 
 function showResultPage(pageNumber) {
+  closeElementEditor();
   const page = pageResults.find((item) => item.page_number === Number(pageNumber));
   if (!page) return;
   ui.resultPage.value = String(page.page_number);
@@ -321,6 +402,7 @@ function showResultPage(pageNumber) {
 }
 
 function setActiveView(view) {
+  if (view !== "layout") closeElementEditor();
   activeView = view;
   const markdownActive = view === "markdown";
   const layoutActive = view === "layout";
@@ -341,6 +423,14 @@ function setActiveView(view) {
 function populateResults(data) {
   parsedContent = data.content;
   pageResults = data.page_results;
+  resultMetadata = {
+    filename: data.filename,
+    page_count: data.page_count,
+    source_page_count: data.source_page_count,
+    selected_pages: data.selected_pages,
+    elapsed_seconds: data.elapsed_seconds,
+  };
+  resultEdited = false;
   ui.resultPage.replaceChildren();
   pageResults.forEach((page) => {
     const option = document.createElement("option");
@@ -351,6 +441,7 @@ function populateResults(data) {
   ui.resultToolbar.hidden = false;
   ui.copy.disabled = false;
   ui.download.disabled = false;
+  ui.jsonDownload.disabled = false;
   showResultPage(pageResults[0].page_number);
 }
 
@@ -368,7 +459,7 @@ async function runOcr() {
     if (!response.ok) throw new Error(data.detail || "OCR request failed");
     ui.processing.hidden = true;
     populateResults(data);
-    ui.resultStats.textContent = `${data.page_count} OF ${data.source_page_count} PAGE${data.source_page_count === 1 ? "" : "S"} · ${parsedContent.length.toLocaleString()} CHAR · ${data.elapsed_seconds.toFixed(2)} SEC`;
+    updateResultStats();
     setStatus("OCR complete", "ok");
   } catch (error) {
     ui.processing.hidden = true; ui.outputEmpty.hidden = false;
@@ -430,6 +521,37 @@ ui.layoutStage.addEventListener("wheel", (event) => {
   setLayoutZoom(layoutZoom + (event.deltaY < 0 ? layoutZoomStep : -layoutZoomStep));
 }, { passive: false });
 ui.resultPage.addEventListener("change", () => showResultPage(ui.resultPage.value));
+ui.editorClose.addEventListener("click", closeElementEditor);
+ui.editorCancel.addEventListener("click", closeElementEditor);
+ui.editorSave.addEventListener("click", () => {
+  if (!editingElement) return;
+  const page = pageResults.find((item) => item.page_number === editingElement.pageNumber);
+  const element = page?.elements[editingElement.index];
+  if (!page || !element) return closeElementEditor();
+
+  const previousZoom = layoutZoom;
+  element.content = ui.editorContent.value;
+  element.included_in_markdown = ui.editorInclude.checked;
+  rebuildDocumentContent();
+  resultEdited = true;
+  closeElementEditor();
+  renderMarkdown(page.markdown);
+  ui.raw.textContent = page.markdown;
+  renderLayout(page);
+  layoutZoom = previousZoom;
+  if (ui.layoutImage.complete) fitLayoutImage();
+  updateResultStats();
+  setStatus("Changes saved", "ok");
+});
+ui.editorContent.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    ui.editorSave.click();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeElementEditor();
+  }
+});
 ui.copy.addEventListener("click", async () => {
   await navigator.clipboard.writeText(parsedContent); ui.copy.textContent = "Copied";
   setTimeout(() => { ui.copy.textContent = "Copy"; }, 1200);
@@ -438,6 +560,31 @@ ui.download.addEventListener("click", () => {
   const url = URL.createObjectURL(new Blob([parsedContent], { type: "text/markdown;charset=utf-8" }));
   const link = document.createElement("a"); link.href = url;
   link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.md`;
+  link.click(); URL.revokeObjectURL(url);
+});
+ui.jsonDownload.addEventListener("click", () => {
+  const payload = {
+    ...resultMetadata,
+    edited: resultEdited,
+    content: parsedContent,
+    pages: pageResults.map((page) => page.markdown),
+    page_results: pageResults.map((page) => ({
+      page_number: page.page_number,
+      markdown: page.markdown,
+      raw: page.raw,
+      image_width: page.image_width,
+      image_height: page.image_height,
+      elements: page.elements.map((element) => ({
+        bbox: element.bbox,
+        label: element.label,
+        content: element.content,
+        included_in_markdown: elementIsIncluded(element),
+      })),
+    })),
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }));
+  const link = document.createElement("a"); link.href = url;
+  link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.json`;
   link.click(); URL.revokeObjectURL(url);
 });
 
