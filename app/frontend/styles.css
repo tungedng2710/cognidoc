@@ -224,6 +224,20 @@ main {
   cursor: pointer;
 }
 .page-tools button:hover { color: var(--accent); }
+.page-tools > div, .batch-control { display: flex; align-items: center; }
+.page-tools > div { gap: 3px; }
+.batch-control { gap: 5px; margin-right: 5px; }
+.batch-control select {
+  height: 24px;
+  min-width: 42px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 9px "DM Mono", monospace;
+}
+.batch-control select:disabled { color: var(--muted); opacity: .65; }
 .file-meta {
   height: 42px;
   flex: 0 0 auto;

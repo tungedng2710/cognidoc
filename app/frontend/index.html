@@ -38,7 +38,10 @@
         </div>
         <div class="page-tools" id="page-tools" hidden>
           <span id="page-selection-label">0 pages selected</span>
-          <div><button id="select-all-button">Select all</button><button id="select-none-button">Select none</button></div>
+          <div>
+            <label class="batch-control">Batch <select id="batch-size" aria-label="OCR page batch size"><option value="1">1</option></select></label>
+            <button id="select-all-button">Select all</button><button id="select-none-button">Select none</button>
+          </div>
         </div>
         <div class="file-meta" id="file-meta" hidden>
           <div><span class="file-icon">DOC</span><div><strong id="file-name"></strong><span id="file-size"></span></div></div>

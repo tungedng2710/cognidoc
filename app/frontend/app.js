@@ -6,7 +6,8 @@ const ui = {
   remove: $("#remove-button"), sample: $("#sample-button"), run: $("#run-button"),
   clear: $("#clear-button"), pageTools: $("#page-tools"),
   pageSelectionLabel: $("#page-selection-label"), selectAll: $("#select-all-button"),
-  selectNone: $("#select-none-button"), outputEmpty: $("#output-empty"),
+  selectNone: $("#select-none-button"), batchSize: $("#batch-size"),
+  outputEmpty: $("#output-empty"),
   processing: $("#processing"), markdown: $("#markdown-preview"),
   layout: $("#layout-preview"), layoutImage: $("#layout-image"),
   layoutStage: $("#layout-stage"), layoutCanvas: $("#layout-canvas"),
@@ -68,6 +69,7 @@ function clearPreview() {
   ui.previewLoading.hidden = true;
   ui.pageTools.hidden = true;
   selectedPages.clear();
+  updateBatchSizeOptions(1);
 }
 
 function clearFile() {
@@ -107,9 +109,25 @@ function clearResult() {
   ui.resultStats.textContent = "Awaiting document";
 }
 
+function updateBatchSizeOptions(pageCount) {
+  const maximum = Math.max(1, pageCount);
+  const current = Math.min(maximum, Math.max(1, Number(ui.batchSize.value) || 1));
+  const options = document.createDocumentFragment();
+  for (let size = 1; size <= maximum; size += 1) {
+    const option = document.createElement("option");
+    option.value = size;
+    option.textContent = size;
+    options.append(option);
+  }
+  ui.batchSize.replaceChildren(options);
+  ui.batchSize.value = String(current);
+  ui.batchSize.disabled = pageCount <= 1;
+}
+
 function updatePageSelection() {
   const total = ui.pdfPages.children.length;
   const count = selectedPages.size;
+  updateBatchSizeOptions(count);
   ui.pageSelectionLabel.textContent = `${count} of ${total} page${total === 1 ? "" : "s"} selected`;
   ui.pdfPages.querySelectorAll(".page-card").forEach((card) => {
     const selected = selectedPages.has(Number(card.dataset.page));
@@ -410,7 +428,7 @@ function rebuildDocumentContent() {
 function updateResultStats() {
   if (!resultMetadata) return;
   const edited = resultEdited ? " · EDITED" : "";
-  ui.resultStats.textContent = `${resultMetadata.page_count} OF ${resultMetadata.source_page_count} PAGE${resultMetadata.source_page_count === 1 ? "" : "S"} · ${parsedContent.length.toLocaleString()} CHAR · INFERENCE TIME ${resultMetadata.elapsed_seconds.toFixed(2)} SEC${edited}`;
+  ui.resultStats.textContent = `${resultMetadata.page_count} OF ${resultMetadata.source_page_count} PAGE${resultMetadata.source_page_count === 1 ? "" : "S"} · BATCH ${resultMetadata.batch_size} · ${parsedContent.length.toLocaleString()} CHAR · INFERENCE TIME ${resultMetadata.elapsed_seconds.toFixed(2)} SEC${edited}`;
 }
 
 function downloadBlob(blob, extension) {
@@ -580,6 +598,7 @@ function populateResults(data) {
     page_count: data.page_count,
     source_page_count: data.source_page_count,
     selected_pages: data.selected_pages,
+    batch_size: data.batch_size || 1,
     elapsed_seconds: data.elapsed_seconds,
   };
   resultEdited = false;
@@ -605,6 +624,7 @@ async function runOcr() {
   const form = new FormData();
   form.append("file", selectedFile);
   form.append("selected_pages", [...selectedPages].sort((a, b) => a - b).join(","));
+  form.append("batch_size", ui.batchSize.value || "1");
   try {
     const response = await fetch("/api/parse", { method: "POST", body: form });
     const data = await response.json();

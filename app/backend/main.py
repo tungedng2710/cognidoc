@@ -103,6 +103,7 @@ class ParseResponse(BaseModel):
     page_count: int
     source_page_count: int
     selected_pages: list[int]
+    batch_size: int
     elapsed_seconds: float
     content: str
     pages: list[str]
@@ -342,6 +343,15 @@ def _parse_page_selection(selection: str | None, page_count: int) -> list[int]:
             detail=f"Selected page {invalid[0]} is outside this {page_count}-page document.",
         )
     return sorted(selected)
+
+
+def _validate_batch_size(batch_size: int, selected_page_count: int) -> int:
+    if batch_size < 1 or batch_size > selected_page_count:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Batch size must be between 1 and {selected_page_count}.",
+        )
+    return batch_size
 
 
 def _strip_code_fence(content: str) -> str:
@@ -1059,6 +1069,7 @@ async def parse_document(
     request: Request,
     file: UploadFile = File(...),
     selected_pages: str | None = Form(default=None),
+    batch_size: int = Form(default=1),
 ) -> ParseResponse:
     data, content_type = await _read_upload(file)
     filename = Path(file.filename or "document").name
@@ -1066,6 +1077,7 @@ async def parse_document(
     if content_type == PDF_TYPE:
         source_page_count = await asyncio.to_thread(_pdf_page_count, data)
         page_numbers = _parse_page_selection(selected_pages, source_page_count)
+        batch_size = _validate_batch_size(batch_size, len(page_numbers))
         rendered = await asyncio.to_thread(
             _render_pdf_pages,
             data,
@@ -1076,6 +1088,7 @@ async def parse_document(
     else:
         source_page_count = await asyncio.to_thread(_image_page_count, data)
         page_numbers = _parse_page_selection(selected_pages, source_page_count)
+        batch_size = _validate_batch_size(batch_size, len(page_numbers))
         rendered = await asyncio.to_thread(
             _render_image_pages,
             data,
@@ -1086,31 +1099,33 @@ async def parse_document(
 
     started = perf_counter()
     request_semaphore = asyncio.Semaphore(max(1, OCR_CONCURRENCY))
+    page_semaphore = asyncio.Semaphore(batch_size)
 
     async def parse_page(page_number: int, image: Image.Image) -> PageResult:
-        try:
-            (raw, elements), image_url = await asyncio.gather(
-                _ocr_page(
-                    request.app.state.ocr_client,
-                    image,
-                    page_number,
-                    request_semaphore,
-                ),
-                asyncio.to_thread(_preview_data_uri, image),
-            )
-            return PageResult(
-                page_number=page_number,
-                markdown=_elements_to_markdown(
-                    elements, raw if PIPELINE_MODE == "end2end" else ""
-                ),
-                raw=raw,
-                elements=elements,
-                image_url=image_url,
-                image_width=image.width,
-                image_height=image.height,
-            )
-        finally:
-            image.close()
+        async with page_semaphore:
+            try:
+                (raw, elements), image_url = await asyncio.gather(
+                    _ocr_page(
+                        request.app.state.ocr_client,
+                        image,
+                        page_number,
+                        request_semaphore,
+                    ),
+                    asyncio.to_thread(_preview_data_uri, image),
+                )
+                return PageResult(
+                    page_number=page_number,
+                    markdown=_elements_to_markdown(
+                        elements, raw if PIPELINE_MODE == "end2end" else ""
+                    ),
+                    raw=raw,
+                    elements=elements,
+                    image_url=image_url,
+                    image_width=image.width,
+                    image_height=image.height,
+                )
+            finally:
+                image.close()
 
     results = await asyncio.gather(
         *(parse_page(number, image) for number, image in rendered)
@@ -1130,6 +1145,7 @@ async def parse_document(
         page_count=len(results),
         source_page_count=source_page_count,
         selected_pages=page_numbers,
+        batch_size=batch_size,
         elapsed_seconds=round(perf_counter() - started, 2),
         content=combined,
         pages=markdown_pages,

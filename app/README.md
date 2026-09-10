@@ -84,4 +84,5 @@ and structured JSON files.
 
 - `POST /api/preview` accepts `file` and returns page thumbnails.
 - `POST /api/parse` accepts `file` plus optional `selected_pages` such as
-  `1,3-5`. Omitting it processes every page.
+  `1,3-5`, and optional `batch_size` from `1` to the number of selected pages.
+  Batch size defaults to `1`; omitting `selected_pages` processes every page.

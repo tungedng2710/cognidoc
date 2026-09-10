@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from io import BytesIO
@@ -119,6 +120,47 @@ def test_repeated_recognition_output_is_retried():
     assert response.json()["content"] == "Recovered text"
     assert recognition_temperatures == [0, 0.2]
     assert _detect_repeat_token("10\n" * 200)
+
+
+def test_page_batch_size_limits_parallel_ocr():
+    active = 0
+    peak = 0
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        prompt = json.loads(request.content)["messages"][0]["content"][1]["text"]
+        is_layout = "categories and coordinates" in prompt
+        if is_layout:
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+        content = (
+            "[{'bbox': [0, 0, 1000, 1000], 'label': 'Text'}]"
+            if is_layout
+            else "Recognized"
+        )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
+
+    with TestClient(app) as client:
+        real_client = app.state.ocr_client
+        app.state.ocr_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(upstream), base_url="https://ocr.test/v1"
+        )
+        try:
+            response = client.post(
+                "/api/parse",
+                files={"file": ("document.pdf", _pdf(3), "application/pdf")},
+                data={"batch_size": "2"},
+            )
+        finally:
+            app.state.ocr_client = real_client
+
+    assert peak == 2
+    assert response.status_code == 200
+    assert response.json()["batch_size"] == 2
 
 
 def test_rejects_unsupported_type():
@@ -251,6 +293,15 @@ def test_page_selection_ranges_and_validation():
         )
     assert response.status_code == 422
     assert "outside" in response.json()["detail"]
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/parse",
+            files={"file": ("document.pdf", _pdf(2), "application/pdf")},
+            data={"selected_pages": "1-2", "batch_size": "3"},
+        )
+    assert response.status_code == 422
+    assert "between 1 and 2" in response.json()["detail"]
 
 
 def test_monkey_output_parser_supports_code_fenced_python():
