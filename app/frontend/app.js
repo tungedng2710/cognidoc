@@ -25,6 +25,7 @@ const ui = {
   editorContent: $("#element-content-input"), editorInclude: $("#element-include-input"),
   editorClose: $("#element-editor-close"), editorCancel: $("#element-editor-cancel"),
   editorSave: $("#element-editor-save"),
+  bboxInputs: [$("#bbox-x1"), $("#bbox-y1"), $("#bbox-x2"), $("#bbox-y2")],
 };
 
 let selectedFile = null;
@@ -34,6 +35,8 @@ let parsedContent = "";
 let pageResults = [];
 let resultMetadata = null;
 let editingElement = null;
+let bboxDrag = null;
+let suppressBoxClick = false;
 let resultEdited = false;
 let activeView = "markdown";
 let fileVersion = 0;
@@ -249,24 +252,142 @@ function elementIsIncluded(element) {
   return !["page-header", "page-footer"].includes(element.label.trim().toLowerCase().replace(/[\s_]+/g, "-"));
 }
 
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function normalizeBbox(values, page) {
+  const current = editingElement?.draftBbox || [0, 0, page.image_width, page.image_height];
+  const parsed = values.map((value, index) => Number.isFinite(Number(value)) ? Number(value) : current[index]);
+  const minimumSize = Math.max(1, Math.min(page.image_width, page.image_height) / 500);
+  let [x1, y1, x2, y2] = parsed;
+  x1 = clamp(x1, 0, page.image_width - minimumSize);
+  y1 = clamp(y1, 0, page.image_height - minimumSize);
+  x2 = clamp(x2, x1 + minimumSize, page.image_width);
+  y2 = clamp(y2, y1 + minimumSize, page.image_height);
+  return [x1, y1, x2, y2].map((value) => Math.round(value * 100) / 100);
+}
+
+function syncBboxInputs(bbox) {
+  ui.bboxInputs.forEach((input, index) => { input.value = String(Math.round(bbox[index] * 100) / 100); });
+}
+
+function updateDetectionGeometry(group, bbox) {
+  if (!group) return;
+  const [x1, y1, x2, y2] = bbox;
+  const labelSize = Number(group.dataset.labelSize);
+  const labelPadding = Number(group.dataset.labelPadding);
+  const handleSize = Number(group.dataset.handleSize);
+  const rect = group.querySelector(".bbox-rect");
+  rect.setAttribute("x", x1); rect.setAttribute("y", y1);
+  rect.setAttribute("width", x2 - x1); rect.setAttribute("height", y2 - y1);
+  const tag = group.querySelector("text");
+  tag.setAttribute("x", x1 + labelPadding);
+  tag.setAttribute("y", Math.max(labelSize, y1 - labelPadding));
+  const corners = { nw: [x1, y1], ne: [x2, y1], sw: [x1, y2], se: [x2, y2] };
+  Object.entries(corners).forEach(([corner, [x, y]]) => {
+    const handle = group.querySelector(`[data-handle="${corner}"]`);
+    handle.setAttribute("x", x - handleSize / 2);
+    handle.setAttribute("y", y - handleSize / 2);
+    handle.setAttribute("width", handleSize);
+    handle.setAttribute("height", handleSize);
+  });
+}
+
+function restoreEditingGeometry() {
+  if (!editingElement) return;
+  const page = pageResults.find((item) => item.page_number === editingElement.pageNumber);
+  const element = page?.elements[editingElement.index];
+  if (!element || Number(ui.resultPage.value) !== editingElement.pageNumber) return;
+  const group = ui.layoutOverlay.querySelector(`[data-element-index="${editingElement.index}"]`);
+  updateDetectionGeometry(group, element.bbox);
+}
+
+function positionElementEditor(group) {
+  if (!group) return;
+  const box = group.getBoundingClientRect();
+  const shell = ui.elementEditor.parentElement.getBoundingClientRect();
+  ui.elementEditor.classList.toggle("dock-left", box.left + box.width / 2 > shell.left + shell.width / 2);
+}
+
 function closeElementEditor() {
+  restoreEditingGeometry();
+  bboxDrag = null;
   editingElement = null;
   ui.elementEditor.hidden = true;
+  ui.elementEditor.classList.remove("dock-left");
   ui.layoutOverlay?.querySelectorAll(".detection.selected").forEach((group) => group.classList.remove("selected"));
 }
 
-function openElementEditor(page, index) {
+function openElementEditor(page, index, focusEditor = true) {
   const element = page.elements[index];
   if (!element) return;
-  editingElement = { pageNumber: page.page_number, index };
+  if (editingElement?.pageNumber === page.page_number && editingElement.index === index) {
+    if (focusEditor) requestAnimationFrame(() => ui.editorContent.focus());
+    return;
+  }
+  restoreEditingGeometry();
+  editingElement = { pageNumber: page.page_number, index, draftBbox: [...element.bbox] };
   ui.editorTitle.textContent = `Page ${page.page_number} · ${index + 1} · ${element.label}`;
   ui.editorContent.value = element.content || "";
   ui.editorInclude.checked = elementIsIncluded(element);
+  syncBboxInputs(editingElement.draftBbox);
   ui.elementEditor.hidden = false;
   ui.layoutOverlay.querySelectorAll(".detection").forEach((group) => {
     group.classList.toggle("selected", Number(group.dataset.elementIndex) === index);
   });
-  requestAnimationFrame(() => ui.editorContent.focus());
+  positionElementEditor(ui.layoutOverlay.querySelector(`[data-element-index="${index}"]`));
+  if (focusEditor) requestAnimationFrame(() => ui.editorContent.focus());
+}
+
+function clientToLayoutPoint(event) {
+  const matrix = ui.layoutOverlay.getScreenCTM();
+  if (!matrix) return null;
+  const point = ui.layoutOverlay.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  return point.matrixTransform(matrix.inverse());
+}
+
+function beginBboxDrag(event, page, index, mode) {
+  if (event.button !== 0) return;
+  openElementEditor(page, index, false);
+  const start = clientToLayoutPoint(event);
+  if (!start || !editingElement) return;
+  bboxDrag = {
+    page,
+    index,
+    mode,
+    start,
+    original: [...editingElement.draftBbox],
+    group: event.currentTarget.closest(".detection"),
+    moved: false,
+  };
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function draggedBbox(drag, point) {
+  const { page, mode, original, start } = drag;
+  const dx = point.x - start.x;
+  const dy = point.y - start.y;
+  const minimumSize = Math.max(1, Math.min(page.image_width, page.image_height) / 500);
+  let [x1, y1, x2, y2] = original;
+  if (mode === "move") {
+    const width = x2 - x1;
+    const height = y2 - y1;
+    x1 = clamp(x1 + dx, 0, page.image_width - width);
+    y1 = clamp(y1 + dy, 0, page.image_height - height);
+    x2 = x1 + width;
+    y2 = y1 + height;
+  } else {
+    if (mode.includes("w")) x1 = clamp(x1 + dx, 0, x2 - minimumSize);
+    if (mode.includes("e")) x2 = clamp(x2 + dx, x1 + minimumSize, page.image_width);
+    if (mode.includes("n")) y1 = clamp(y1 + dy, 0, y2 - minimumSize);
+    if (mode.includes("s")) y2 = clamp(y2 + dy, y1 + minimumSize, page.image_height);
+  }
+  return [x1, y1, x2, y2].map((value) => Math.round(value * 100) / 100);
 }
 
 function pageMarkdownFromElements(page) {
@@ -289,7 +410,20 @@ function rebuildDocumentContent() {
 function updateResultStats() {
   if (!resultMetadata) return;
   const edited = resultEdited ? " · EDITED" : "";
-  ui.resultStats.textContent = `${resultMetadata.page_count} OF ${resultMetadata.source_page_count} PAGE${resultMetadata.source_page_count === 1 ? "" : "S"} · ${parsedContent.length.toLocaleString()} CHAR · ${resultMetadata.elapsed_seconds.toFixed(2)} SEC${edited}`;
+  ui.resultStats.textContent = `${resultMetadata.page_count} OF ${resultMetadata.source_page_count} PAGE${resultMetadata.source_page_count === 1 ? "" : "S"} · ${parsedContent.length.toLocaleString()} CHAR · INFERENCE TIME ${resultMetadata.elapsed_seconds.toFixed(2)} SEC${edited}`;
+}
+
+function downloadBlob(blob, extension) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.${extension}`;
+  document.body.append(link);
+  link.click();
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 30000);
 }
 
 function applyLayoutZoom(center = true) {
@@ -336,6 +470,7 @@ function renderLayout(page) {
   const svgNs = "http://www.w3.org/2000/svg";
   const labelSize = Math.max(18, Math.min(36, page.image_width / 65));
   const labelPadding = Math.max(4, labelSize * 0.3);
+  const handleSize = Math.max(24, Math.min(40, page.image_width / 45));
 
   page.elements.forEach((element, index) => {
     const [x1, y1, x2, y2] = element.bbox;
@@ -343,6 +478,9 @@ function renderLayout(page) {
     const group = document.createElementNS(svgNs, "g");
     group.classList.add("detection");
     group.dataset.elementIndex = index;
+    group.dataset.labelSize = labelSize;
+    group.dataset.labelPadding = labelPadding;
+    group.dataset.handleSize = handleSize;
     group.setAttribute("tabindex", "0");
     group.setAttribute("role", "button");
     group.setAttribute("aria-label", `Edit ${element.label} element ${index + 1}`);
@@ -350,17 +488,31 @@ function renderLayout(page) {
       group.classList.add("selected");
     }
     const rect = document.createElementNS(svgNs, "rect");
+    rect.classList.add("bbox-rect");
     rect.setAttribute("x", x1); rect.setAttribute("y", y1);
     rect.setAttribute("width", x2 - x1); rect.setAttribute("height", y2 - y1);
     rect.setAttribute("stroke", color);
+    rect.addEventListener("pointerdown", (event) => beginBboxDrag(event, page, index, "move"));
     const tag = document.createElementNS(svgNs, "text");
     tag.setAttribute("x", x1 + labelPadding); tag.setAttribute("y", Math.max(labelSize, y1 - labelPadding));
     tag.style.fontSize = `${labelSize}px`;
     tag.setAttribute("fill", color); tag.textContent = `${index + 1} · ${element.label}`;
+    const handles = ["nw", "ne", "sw", "se"].map((corner) => {
+      const handle = document.createElementNS(svgNs, "rect");
+      handle.classList.add("resize-handle", `resize-${corner}`);
+      handle.dataset.handle = corner;
+      handle.setAttribute("stroke", color);
+      handle.addEventListener("pointerdown", (event) => beginBboxDrag(event, page, index, corner));
+      return handle;
+    });
     const title = document.createElementNS(svgNs, "title");
     title.textContent = element.content.startsWith("![image](data:") ? element.label : (element.content || element.label);
-    group.append(rect, tag, title);
-    group.addEventListener("click", () => openElementEditor(page, index));
+    group.append(rect, tag, ...handles, title);
+    updateDetectionGeometry(group, element.bbox);
+    group.addEventListener("click", () => {
+      if (suppressBoxClick) return;
+      openElementEditor(page, index);
+    });
     group.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
@@ -373,7 +525,7 @@ function renderLayout(page) {
   if (page.elements.length) {
     const hint = document.createElement("span");
     hint.className = "layout-hint";
-    hint.textContent = "Click a box to edit";
+    hint.textContent = "Drag to move · drag corners to resize";
     ui.layoutLegend.append(hint);
   }
   labels.forEach((label) => {
@@ -520,9 +672,40 @@ ui.layoutStage.addEventListener("wheel", (event) => {
   event.preventDefault();
   setLayoutZoom(layoutZoom + (event.deltaY < 0 ? layoutZoomStep : -layoutZoomStep));
 }, { passive: false });
+window.addEventListener("pointermove", (event) => {
+  if (!bboxDrag || !editingElement) return;
+  const point = clientToLayoutPoint(event);
+  if (!point) return;
+  if (Math.abs(point.x - bboxDrag.start.x) > 0.5 || Math.abs(point.y - bboxDrag.start.y) > 0.5) {
+    bboxDrag.moved = true;
+  }
+  editingElement.draftBbox = draggedBbox(bboxDrag, point);
+  updateDetectionGeometry(bboxDrag.group, editingElement.draftBbox);
+  syncBboxInputs(editingElement.draftBbox);
+  event.preventDefault();
+});
+window.addEventListener("pointerup", () => {
+  if (!bboxDrag) return;
+  if (bboxDrag.moved) {
+    suppressBoxClick = true;
+    setTimeout(() => { suppressBoxClick = false; }, 0);
+  }
+  positionElementEditor(bboxDrag.group);
+  bboxDrag = null;
+});
 ui.resultPage.addEventListener("change", () => showResultPage(ui.resultPage.value));
 ui.editorClose.addEventListener("click", closeElementEditor);
 ui.editorCancel.addEventListener("click", closeElementEditor);
+ui.bboxInputs.forEach((input) => input.addEventListener("change", () => {
+  if (!editingElement) return;
+  const page = pageResults.find((item) => item.page_number === editingElement.pageNumber);
+  if (!page) return;
+  editingElement.draftBbox = normalizeBbox(ui.bboxInputs.map((item) => item.value), page);
+  syncBboxInputs(editingElement.draftBbox);
+  const group = ui.layoutOverlay.querySelector(`[data-element-index="${editingElement.index}"]`);
+  updateDetectionGeometry(group, editingElement.draftBbox);
+  positionElementEditor(group);
+}));
 ui.editorSave.addEventListener("click", () => {
   if (!editingElement) return;
   const page = pageResults.find((item) => item.page_number === editingElement.pageNumber);
@@ -530,7 +713,9 @@ ui.editorSave.addEventListener("click", () => {
   if (!page || !element) return closeElementEditor();
 
   const previousZoom = layoutZoom;
+  editingElement.draftBbox = normalizeBbox(ui.bboxInputs.map((input) => input.value), page);
   element.content = ui.editorContent.value;
+  element.bbox = [...editingElement.draftBbox];
   element.included_in_markdown = ui.editorInclude.checked;
   rebuildDocumentContent();
   resultEdited = true;
@@ -557,10 +742,7 @@ ui.copy.addEventListener("click", async () => {
   setTimeout(() => { ui.copy.textContent = "Copy"; }, 1200);
 });
 ui.download.addEventListener("click", () => {
-  const url = URL.createObjectURL(new Blob([parsedContent], { type: "text/markdown;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url;
-  link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.md`;
-  link.click(); URL.revokeObjectURL(url);
+  downloadBlob(new Blob([parsedContent], { type: "text/markdown;charset=utf-8" }), "md");
 });
 ui.jsonDownload.addEventListener("click", () => {
   const payload = {
@@ -582,10 +764,7 @@ ui.jsonDownload.addEventListener("click", () => {
       })),
     })),
   };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url;
-  link.download = `${(selectedFile?.name || "document").replace(/\.[^.]+$/, "")}.json`;
-  link.click(); URL.revokeObjectURL(url);
+  downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }), "json");
 });
 
 window.addEventListener("resize", () => {

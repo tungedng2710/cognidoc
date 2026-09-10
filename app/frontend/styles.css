@@ -404,8 +404,8 @@ main {
 }
 .layout-canvas img { display: block; width: 100%; height: 100%; }
 .layout-canvas svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
-.detection { cursor: pointer; outline: none; }
-.detection rect { fill: transparent; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.detection { outline: none; touch-action: none; }
+.detection > .bbox-rect { fill: transparent; stroke-width: 2; vector-effect: non-scaling-stroke; cursor: move; }
 .detection text {
   font-family: Manrope, sans-serif;
   font-size: 11px;
@@ -418,8 +418,17 @@ main {
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
-.detection:hover rect, .detection:focus rect { fill: rgba(255, 255, 255, .12); stroke-width: 3; }
-.detection.selected rect { fill: rgba(119, 214, 166, .2); stroke-width: 4; }
+.detection:hover > .bbox-rect, .detection:focus > .bbox-rect { fill: rgba(255, 255, 255, .12); stroke-width: 3; }
+.detection.selected > .bbox-rect { fill: rgba(119, 214, 166, .2); stroke-width: 4; }
+.resize-handle {
+  display: none;
+  fill: #fff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.detection.selected .resize-handle { display: block; }
+.resize-nw, .resize-se { cursor: nwse-resize; }
+.resize-ne, .resize-sw { cursor: nesw-resize; }
 .layout-legend {
   min-height: 28px;
   flex: 0 0 auto;
@@ -441,7 +450,7 @@ main {
   right: 12px;
   bottom: 12px;
   z-index: 5;
-  width: min(440px, calc(100% - 24px));
+  width: min(380px, calc(48% - 18px));
   max-height: calc(100% - 24px);
   padding: 14px;
   display: flex;
@@ -452,6 +461,7 @@ main {
   color: var(--ink);
   box-shadow: 0 18px 50px rgba(0, 0, 0, .32);
 }
+.element-editor.dock-left { right: auto; left: 12px; }
 .element-editor-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .element-editor-header > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .element-editor-header span {
@@ -483,6 +493,35 @@ main {
   font: 400 11px/1.55 Manrope, sans-serif;
 }
 #element-content-input:focus { border-color: var(--accent); outline: 1px solid var(--accent); }
+.bbox-fields {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  border: 0;
+}
+.bbox-fields legend {
+  width: 100%;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font: 500 8px "DM Mono", monospace;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.bbox-fields label { color: var(--muted); font: 500 8px "DM Mono", monospace; }
+.bbox-fields input {
+  width: 100%;
+  height: 30px;
+  margin-top: 3px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  font: 400 10px "DM Mono", monospace;
+}
+.bbox-fields input:focus { border-color: var(--accent); outline: 1px solid var(--accent); }
 .include-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
 .include-control input { accent-color: var(--accent); }
 .element-editor-actions { display: flex; justify-content: flex-end; gap: 7px; }

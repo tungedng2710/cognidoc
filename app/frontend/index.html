@@ -81,6 +81,13 @@
               <button id="element-editor-close" type="button" aria-label="Close editor">×</button>
             </div>
             <textarea id="element-content-input" spellcheck="true" aria-label="Detected content"></textarea>
+            <fieldset class="bbox-fields">
+              <legend>Bounding box · pixels</legend>
+              <label>X1<input id="bbox-x1" type="number" min="0" step="1"></label>
+              <label>Y1<input id="bbox-y1" type="number" min="0" step="1"></label>
+              <label>X2<input id="bbox-x2" type="number" min="0" step="1"></label>
+              <label>Y2<input id="bbox-y2" type="number" min="0" step="1"></label>
+            </fieldset>
             <label class="include-control"><input id="element-include-input" type="checkbox"> Include this element in Markdown</label>
             <div class="element-editor-actions"><button id="element-editor-cancel" type="button">Cancel</button><button id="element-editor-save" type="button">Save changes</button></div>
           </section>
