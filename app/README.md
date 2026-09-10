@@ -61,7 +61,9 @@ The Compose example uses `host.docker.internal` so a vLLM server running on the
 Docker host is reachable from the application container.
 
 The UI prepares thumbnail previews for multi-page PDFs and TIFFs so individual
-pages can be selected before OCR. Like the
+pages can be selected before OCR. The batch-size text field accepts any valid
+integer up to the selected-page count; its buttons step through powers of two
+and cap at that count. Like the
 [official MonkeyOCRv2 Gradio demo](https://github.com/Yuliang-Liu/MonkeyOCRv2/blob/main/parsing/demo/gradio_demo.py),
 PDFs are split into selected pages and rasterized as separate RGB images. Small
 page and image inputs are upscaled to `MIN_IMAGE_PIXELS` before the default

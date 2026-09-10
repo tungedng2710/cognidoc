@@ -7,6 +7,7 @@ const ui = {
   clear: $("#clear-button"), pageTools: $("#page-tools"),
   pageSelectionLabel: $("#page-selection-label"), selectAll: $("#select-all-button"),
   selectNone: $("#select-none-button"), batchSize: $("#batch-size"),
+  batchDecrease: $("#batch-decrease"), batchIncrease: $("#batch-increase"),
   outputEmpty: $("#output-empty"),
   processing: $("#processing"), markdown: $("#markdown-preview"),
   layout: $("#layout-preview"), layoutImage: $("#layout-image"),
@@ -69,7 +70,7 @@ function clearPreview() {
   ui.previewLoading.hidden = true;
   ui.pageTools.hidden = true;
   selectedPages.clear();
-  updateBatchSizeOptions(1);
+  updateBatchSizeControl(1);
 }
 
 function clearFile() {
@@ -109,25 +110,50 @@ function clearResult() {
   ui.resultStats.textContent = "Awaiting document";
 }
 
-function updateBatchSizeOptions(pageCount) {
+function normalizeBatchSize(value = ui.batchSize.value) {
+  const maximum = Math.max(1, Number(ui.batchSize.max) || 1);
+  const numeric = Number(value);
+  return clamp(Number.isFinite(numeric) ? Math.round(numeric) : 1, 1, maximum);
+}
+
+function updateBatchButtons() {
+  const current = normalizeBatchSize();
+  const maximum = Number(ui.batchSize.max) || 1;
+  ui.batchDecrease.disabled = current <= 1;
+  ui.batchIncrease.disabled = current >= maximum;
+}
+
+function setBatchSize(value) {
+  const normalized = normalizeBatchSize(value);
+  ui.batchSize.value = String(normalized);
+  updateBatchButtons();
+  return normalized;
+}
+
+function updateBatchSizeControl(pageCount) {
   const maximum = Math.max(1, pageCount);
-  const current = Math.min(maximum, Math.max(1, Number(ui.batchSize.value) || 1));
-  const options = document.createDocumentFragment();
-  for (let size = 1; size <= maximum; size += 1) {
-    const option = document.createElement("option");
-    option.value = size;
-    option.textContent = size;
-    options.append(option);
-  }
-  ui.batchSize.replaceChildren(options);
-  ui.batchSize.value = String(current);
+  ui.batchSize.max = String(maximum);
   ui.batchSize.disabled = pageCount <= 1;
+  setBatchSize(ui.batchSize.value);
+}
+
+function stepBatchSize(direction) {
+  const current = normalizeBatchSize();
+  const maximum = Number(ui.batchSize.max) || 1;
+  let power = 1;
+  if (direction > 0) {
+    while (power <= current) power *= 2;
+    setBatchSize(Math.min(power, maximum));
+    return;
+  }
+  while (power * 2 < current) power *= 2;
+  setBatchSize(power);
 }
 
 function updatePageSelection() {
   const total = ui.pdfPages.children.length;
   const count = selectedPages.size;
-  updateBatchSizeOptions(count);
+  updateBatchSizeControl(count);
   ui.pageSelectionLabel.textContent = `${count} of ${total} page${total === 1 ? "" : "s"} selected`;
   ui.pdfPages.querySelectorAll(".page-card").forEach((card) => {
     const selected = selectedPages.has(Number(card.dataset.page));
@@ -624,7 +650,7 @@ async function runOcr() {
   const form = new FormData();
   form.append("file", selectedFile);
   form.append("selected_pages", [...selectedPages].sort((a, b) => a - b).join(","));
-  form.append("batch_size", ui.batchSize.value || "1");
+  form.append("batch_size", String(setBatchSize(ui.batchSize.value)));
   try {
     const response = await fetch("/api/parse", { method: "POST", body: form });
     const data = await response.json();
@@ -681,6 +707,10 @@ ui.selectAll.addEventListener("click", () => {
   updatePageSelection();
 });
 ui.selectNone.addEventListener("click", () => { selectedPages.clear(); updatePageSelection(); });
+ui.batchDecrease.addEventListener("click", () => stepBatchSize(-1));
+ui.batchIncrease.addEventListener("click", () => stepBatchSize(1));
+ui.batchSize.addEventListener("input", updateBatchButtons);
+ui.batchSize.addEventListener("change", () => setBatchSize(ui.batchSize.value));
 ui.markdownTab.addEventListener("click", () => setActiveView("markdown"));
 ui.layoutTab.addEventListener("click", () => setActiveView("layout"));
 ui.rawTab.addEventListener("click", () => setActiveView("raw"));
