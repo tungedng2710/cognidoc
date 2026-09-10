@@ -366,6 +366,20 @@ main {
 .markdown-preview blockquote { margin: 16px 0; padding: 2px 16px; border-left: 3px solid var(--accent); color: #62675f; }
 .markdown-preview img { max-width: 100%; }
 
+.raw-markdown {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 25px 32px 42px;
+  overflow: auto;
+  border: 0;
+  background: #fff;
+  color: #252824;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 400 11px/1.7 "DM Mono", monospace;
+}
+
 .layout-preview {
   width: 100%;
   height: 100%;
@@ -392,11 +406,15 @@ main {
 .layout-canvas svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
 .detection rect { fill: transparent; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .detection text {
-  font: 600 11px Manrope, sans-serif;
+  font-family: Manrope, sans-serif;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
   paint-order: stroke;
   stroke: #101310;
   stroke-width: 3px;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 .detection:hover rect { fill: rgba(255, 255, 255, .12); stroke-width: 3; }

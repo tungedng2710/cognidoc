@@ -12,7 +12,8 @@ const ui = {
   layoutStage: $("#layout-stage"), layoutCanvas: $("#layout-canvas"),
   layoutOverlay: $("#layout-overlay"), layoutLegend: $("#layout-legend"),
   resultToolbar: $("#result-toolbar"), resultPage: $("#result-page"),
-  markdownTab: $("#markdown-tab"), layoutTab: $("#layout-tab"),
+  markdownTab: $("#markdown-tab"), layoutTab: $("#layout-tab"), rawTab: $("#raw-tab"),
+  raw: $("#raw-markdown"),
   zoomControls: $("#zoom-controls"), zoomOut: $("#zoom-out-button"),
   zoomReset: $("#zoom-reset-button"), zoomIn: $("#zoom-in-button"),
   copy: $("#copy-button"), download: $("#download-button"),
@@ -74,6 +75,8 @@ function clearResult() {
   parsedContent = "";
   pageResults = [];
   ui.markdown.replaceChildren();
+  ui.raw.textContent = "";
+  ui.raw.hidden = true;
   ui.markdown.hidden = true;
   ui.layout.hidden = true;
   ui.zoomControls.hidden = true;
@@ -211,6 +214,15 @@ function renderMarkdown(source) {
   if (window.marked && window.DOMPurify) {
     const html = window.marked.parse(source, { gfm: true, breaks: false });
     ui.markdown.innerHTML = window.DOMPurify.sanitize(html);
+    if (window.renderMathInElement) {
+      window.renderMathInElement(ui.markdown, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false },
+        ],
+        throwOnError: false,
+      });
+    }
   } else {
     ui.markdown.append(fallbackMarkdown(source));
   }
@@ -258,9 +270,12 @@ function renderLayout(page) {
   ui.layoutImage.onload = fitLayoutImage;
   ui.layoutImage.src = page.image_url;
   ui.layoutOverlay.replaceChildren();
+  ui.layoutOverlay.setAttribute("viewBox", `0 0 ${page.image_width} ${page.image_height}`);
   ui.layoutLegend.replaceChildren();
   const labels = [...new Set(page.elements.map((element) => element.label))];
   const svgNs = "http://www.w3.org/2000/svg";
+  const labelSize = Math.max(18, Math.min(36, page.image_width / 65));
+  const labelPadding = Math.max(4, labelSize * 0.3);
 
   page.elements.forEach((element, index) => {
     const [x1, y1, x2, y2] = element.bbox;
@@ -272,10 +287,11 @@ function renderLayout(page) {
     rect.setAttribute("width", x2 - x1); rect.setAttribute("height", y2 - y1);
     rect.setAttribute("stroke", color);
     const tag = document.createElementNS(svgNs, "text");
-    tag.setAttribute("x", x1 + 4); tag.setAttribute("y", Math.max(13, y1 - 5));
+    tag.setAttribute("x", x1 + labelPadding); tag.setAttribute("y", Math.max(labelSize, y1 - labelPadding));
+    tag.style.fontSize = `${labelSize}px`;
     tag.setAttribute("fill", color); tag.textContent = `${index + 1} · ${element.label}`;
     const title = document.createElementNS(svgNs, "title");
-    title.textContent = element.content || element.label;
+    title.textContent = element.content.startsWith("![image](data:") ? element.label : (element.content || element.label);
     group.append(rect, tag, title);
     ui.layoutOverlay.append(group);
   });
@@ -299,6 +315,7 @@ function showResultPage(pageNumber) {
   if (!page) return;
   ui.resultPage.value = String(page.page_number);
   renderMarkdown(page.markdown);
+  ui.raw.textContent = page.markdown;
   renderLayout(page);
   setActiveView(activeView);
 }
@@ -306,14 +323,19 @@ function showResultPage(pageNumber) {
 function setActiveView(view) {
   activeView = view;
   const markdownActive = view === "markdown";
+  const layoutActive = view === "layout";
+  const rawActive = view === "raw";
   ui.markdownTab.classList.toggle("active", markdownActive);
-  ui.layoutTab.classList.toggle("active", !markdownActive);
+  ui.layoutTab.classList.toggle("active", layoutActive);
+  ui.rawTab.classList.toggle("active", rawActive);
   ui.markdownTab.setAttribute("aria-selected", String(markdownActive));
-  ui.layoutTab.setAttribute("aria-selected", String(!markdownActive));
+  ui.layoutTab.setAttribute("aria-selected", String(layoutActive));
+  ui.rawTab.setAttribute("aria-selected", String(rawActive));
   ui.markdown.hidden = !markdownActive;
-  ui.layout.hidden = markdownActive;
-  ui.zoomControls.hidden = markdownActive;
-  if (!markdownActive) fitLayoutImage();
+  ui.layout.hidden = !layoutActive;
+  ui.raw.hidden = !rawActive;
+  ui.zoomControls.hidden = !layoutActive;
+  if (layoutActive) fitLayoutImage();
 }
 
 function populateResults(data) {
@@ -335,7 +357,7 @@ function populateResults(data) {
 async function runOcr() {
   if (!selectedFile || !selectedPages.size) return;
   ui.run.disabled = true; ui.clear.disabled = true; ui.outputEmpty.hidden = true;
-  ui.markdown.hidden = true; ui.layout.hidden = true; ui.resultToolbar.hidden = true;
+  ui.markdown.hidden = true; ui.layout.hidden = true; ui.raw.hidden = true; ui.resultToolbar.hidden = true;
   ui.processing.hidden = false; setStatus("Processing document");
   const form = new FormData();
   form.append("file", selectedFile);
@@ -398,6 +420,7 @@ ui.selectAll.addEventListener("click", () => {
 ui.selectNone.addEventListener("click", () => { selectedPages.clear(); updatePageSelection(); });
 ui.markdownTab.addEventListener("click", () => setActiveView("markdown"));
 ui.layoutTab.addEventListener("click", () => setActiveView("layout"));
+ui.rawTab.addEventListener("click", () => setActiveView("raw"));
 ui.zoomOut.addEventListener("click", () => setLayoutZoom(layoutZoom - layoutZoomStep));
 ui.zoomReset.addEventListener("click", () => setLayoutZoom(1));
 ui.zoomIn.addEventListener("click", () => setLayoutZoom(layoutZoom + layoutZoomStep));

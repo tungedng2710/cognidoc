@@ -1,10 +1,24 @@
+import base64
+import json
 from io import BytesIO
 
 import httpx
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from backend.main import _elements_to_markdown, _parse_layout, _parse_page_selection, app
+from backend.main import (
+    MAX_IMAGE_SIDE,
+    MIN_IMAGE_PIXELS,
+    _elements_to_markdown,
+    _map_bbox_to_image,
+    _otsl_to_html,
+    _parse_layout,
+    _parse_page_selection,
+    _process_formula,
+    _normalize_image,
+    _replace_table_images,
+    app,
+)
 
 
 def _png() -> bytes:
@@ -28,10 +42,20 @@ def _tiff(page_count: int = 2) -> bytes:
 
 
 def test_parse_image():
+    recognition_outputs = iter(["Parsed", "Hello"])
+
     async def upstream(request: httpx.Request) -> httpx.Response:
-        content = "[{'bbox': [10, 20, 400, 80], 'label': 'Title', 'content': 'Parsed'}, " \
-            "{'bbox': [10, 100, 400, 150], 'label': 'Text', 'content': 'Hello'}]"
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+        prompt = json.loads(request.content)["messages"][0]["content"][1]["text"]
+        if "categories and coordinates" in prompt:
+            content = (
+                "[{'bbox': [10, 20, 400, 80], 'label': 'Title'}, "
+                "{'bbox': [10, 100, 400, 150], 'label': 'Text'}]"
+            )
+        else:
+            content = next(recognition_outputs)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
 
     with TestClient(app) as client:
         real_client = app.state.ocr_client
@@ -50,8 +74,13 @@ def test_parse_image():
     assert response.json()["content"] == "# Parsed\n\nHello"
     assert response.json()["page_count"] == 1
     assert response.json()["selected_pages"] == [1]
-    assert response.json()["page_results"][0]["elements"][0]["bbox"] == [10.0, 20.0, 400.0, 80.0]
-    assert response.json()["page_results"][0]["image_url"].startswith("data:image/jpeg;base64,")
+    page = response.json()["page_results"][0]
+    assert page["image_width"] * page["image_height"] >= MIN_IMAGE_PIXELS
+    assert max(page["image_width"], page["image_height"]) <= MAX_IMAGE_SIDE
+    assert page["elements"][0]["bbox"] == _map_bbox_to_image(
+        [10, 20, 400, 80], page["image_width"], page["image_height"]
+    )
+    assert page["image_url"].startswith("data:image/jpeg;base64,")
 
 
 def test_rejects_unsupported_type():
@@ -64,11 +93,28 @@ def test_rejects_unsupported_type():
 
 def test_parse_pdf():
     calls = 0
+    layout_image_sizes = []
 
     async def upstream(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(200, json={"choices": [{"message": {"content": "PDF page"}}]})
+        prompt = json.loads(request.content)["messages"][0]["content"][1]["text"]
+        if "categories and coordinates" in prompt:
+            image_url = json.loads(request.content)["messages"][0]["content"][0][
+                "image_url"
+            ]["url"]
+            image_data = base64.b64decode(image_url.split(",", 1)[1])
+            with Image.open(BytesIO(image_data)) as rasterized_page:
+                assert rasterized_page.format == "PNG"
+                layout_image_sizes.append(rasterized_page.size)
+        content = (
+            "[{'bbox': [0, 0, 1000, 1000], 'label': 'Text'}]"
+            if "categories and coordinates" in prompt
+            else "PDF page"
+        )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
 
     with TestClient(app) as client:
         real_client = app.state.ocr_client
@@ -90,7 +136,9 @@ def test_parse_pdf():
     assert response.json()["source_page_count"] == 3
     assert response.json()["selected_pages"] == [2]
     assert response.json()["page_results"][0]["page_number"] == 2
-    assert calls == 1
+    assert calls == 2
+    assert len(layout_image_sizes) == 1
+    assert layout_image_sizes[0][0] * layout_image_sizes[0][1] >= MIN_IMAGE_PIXELS
 
 
 def test_preview_pdf_pages():
@@ -102,7 +150,10 @@ def test_preview_pdf_pages():
     assert response.status_code == 200
     assert response.json()["page_count"] == 2
     assert [page["page_number"] for page in response.json()["pages"]] == [1, 2]
-    assert all(page["image_url"].startswith("data:image/jpeg;base64,") for page in response.json()["pages"])
+    assert all(
+        page["image_url"].startswith("data:image/jpeg;base64,")
+        for page in response.json()["pages"]
+    )
 
 
 def test_parse_selected_tiff_frame():
@@ -111,7 +162,15 @@ def test_parse_selected_tiff_frame():
     async def upstream(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(200, json={"choices": [{"message": {"content": "TIFF frame"}}]})
+        prompt = json.loads(request.content)["messages"][0]["content"][1]["text"]
+        content = (
+            "[{'bbox': [0, 0, 1000, 1000], 'label': 'Text'}]"
+            if "categories and coordinates" in prompt
+            else "TIFF frame"
+        )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
+        )
 
     with TestClient(app) as client:
         real_client = app.state.ocr_client
@@ -130,7 +189,7 @@ def test_parse_selected_tiff_frame():
     assert response.status_code == 200
     assert response.json()["source_page_count"] == 3
     assert response.json()["page_results"][0]["page_number"] == 2
-    assert calls == 1
+    assert calls == 2
 
 
 def test_generated_sample_is_available():
@@ -164,3 +223,61 @@ def test_monkey_output_parser_supports_code_fenced_python():
 
     assert len(elements) == 2
     assert _elements_to_markdown(elements, raw) == "## Summary\n\nResult text"
+
+
+def test_small_images_are_upscaled_for_ocr_without_exceeding_max_side():
+    source = Image.new("RGB", (120, 80), "white")
+    result = _normalize_image(source, max_side=500, min_pixels=100_000)
+    try:
+        assert result.width * result.height >= 100_000
+        assert max(result.size) <= 500
+        assert abs(result.width / result.height - 1.5) < 0.01
+    finally:
+        result.close()
+        source.close()
+
+
+def test_monkey_output_parser_recovers_items_and_maps_pixel_boxes():
+    raw = """Layout follows:
+    {'bbox': [800, 900, 100, 200], 'label': 'Text'},
+    {'bbox': [-20, -20, 1200, 1200], 'label': 'Picture'}
+    """
+    elements = _parse_layout(raw, (200, 100), include_content=False)
+
+    assert [element.bbox for element in elements] == [
+        [20.0, 20.0, 160.0, 90.0],
+        [0.0, 0.0, 200.0, 100.0],
+    ]
+    assert _map_bbox_to_image([500, 500, 500, 500], 100, 100) == [
+        50.0,
+        50.0,
+        51.0,
+        51.0,
+    ]
+
+
+def test_otsl_tables_are_rendered_as_html():
+    assert _otsl_to_html("<fcel>Name<fcel>Value<nl><fcel>A<fcel>1") == (
+        "<table><tr><td>Name</td><td>Value</td></tr>"
+        "<tr><td>A</td><td>1</td></tr></table>"
+    )
+
+
+def test_formula_formatting_matches_official_markdown():
+    assert _process_formula(r"\begin{aligned}x &= 1\end{aligned}\tag{4}") == (
+        "$$\n\\begin{aligned}\nx &= 1\n\\end{aligned}\n$$\n4"
+    )
+
+
+def test_table_image_markers_embed_the_selected_crop():
+    image = Image.new("RGB", (100, 80), "white")
+    try:
+        result = _replace_table_images(
+            "<table><tr><td>[img][0, 0, 500, 500][/img]</td></tr></table>",
+            image,
+        )
+    finally:
+        image.close()
+
+    assert '<img src="data:image/png;base64,' in result
+    assert 'alt="embedded table image"' in result

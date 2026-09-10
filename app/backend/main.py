@@ -3,10 +3,11 @@ from __future__ import annotations
 import ast
 import asyncio
 import base64
-import json
+import math
 import os
 import re
 from contextlib import asynccontextmanager
+from html import escape
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
@@ -33,17 +34,43 @@ API_BASE_URL = os.getenv(
     os.getenv("MONKEYOCR_BASE_URL", "http://127.0.0.1:8888/v1"),
 ).rstrip("/")
 MODEL = os.getenv("MONKEYOCR_MODEL", "MonkeyOCRv2")
-PROMPT = os.getenv(
+END2END_PROMPT = os.getenv(
     "MONKEYOCR_PROMPT",
     "List the document elements in reading order, including their categories, "
     "coordinates, and the content of each element.",
 )
+PIPELINE_MODE = os.getenv("MONKEYOCR_PIPELINE_MODE", "staged").strip().lower()
+if PIPELINE_MODE not in {"staged", "end2end"}:
+    PIPELINE_MODE = "staged"
+KEEP_HEADER_FOOTER = os.getenv(
+    "MONKEYOCR_KEEP_HEADER_FOOTER", "false"
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "30")) * 1024 * 1024
 MAX_PAGES = int(os.getenv("MAX_PDF_PAGES", "20"))
 MAX_IMAGE_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "3200"))
+MIN_IMAGE_PIXELS = max(0, int(os.getenv("MIN_IMAGE_PIXELS", "1003520")))
 MAX_PREVIEW_SIDE = int(os.getenv("MAX_PREVIEW_SIDE", "1200"))
+PDF_RENDER_DPI = max(72, int(os.getenv("PDF_RENDER_DPI", "200")))
 OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "3"))
 REQUEST_TIMEOUT = float(os.getenv("OCR_TIMEOUT_SECONDS", "300"))
+
+MONKEYOCR_PROMPTS = {
+    "Caption": "Please output the text content from the image.",
+    "List-item": "Please output the text content from the image.",
+    "Page-footer": "Please output the text content from the image.",
+    "Page-header": "Please output the text content from the image.",
+    "Section-header": "Please output the text content from the image.",
+    "Text": "Please output the text content from the image.",
+    "Title": "Please output the text content from the image.",
+    "Formula": "Please write out the expression of the formula in the image using LaTeX format.",
+    "Table": "Please extract the table from the image and represent it in OTSL format.",
+    "LAYOUT": "Please output the categories and coordinates of the document elements in reading order.",
+}
 
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/bmp", "image/tiff"}
 PDF_TYPE = "application/pdf"
@@ -62,6 +89,8 @@ class PageResult(BaseModel):
     raw: str
     elements: list[LayoutElement]
     image_url: str
+    image_width: int
+    image_height: int
 
 
 class ParseResponse(BaseModel):
@@ -90,12 +119,32 @@ class HealthResponse(BaseModel):
     status: str
     model: str
     upstream: str
+    pipeline: str
 
 
-def _normalize_image(image: Image.Image, max_side: int = MAX_IMAGE_SIDE) -> Image.Image:
+def _normalize_image(
+    image: Image.Image,
+    max_side: int = MAX_IMAGE_SIDE,
+    min_pixels: int = MIN_IMAGE_PIXELS,
+) -> Image.Image:
+    """Orient and resize a raster while preserving its aspect ratio."""
     image = ImageOps.exif_transpose(image).convert("RGB")
-    if max(image.size) > max_side:
-        image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    width, height = image.size
+    max_side = max(1, max_side)
+    scale = 1.0
+    if max(width, height) > max_side:
+        scale = max_side / max(width, height)
+    elif min_pixels > 0 and width * height < min_pixels:
+        scale = min(
+            math.sqrt(min_pixels / (width * height)),
+            max_side / max(width, height),
+        )
+    if not math.isclose(scale, 1.0):
+        target = (
+            max(1, min(max_side, math.ceil(width * scale))),
+            max(1, min(max_side, math.ceil(height * scale))),
+        )
+        image = image.resize(target, Image.Resampling.LANCZOS)
     return image
 
 
@@ -104,7 +153,9 @@ def _image_page_count(data: bytes) -> int:
         with Image.open(BytesIO(data)) as source:
             # JPEG/MPO and animated WebP can expose auxiliary frames that are not
             # document pages. Only TIFF frames use the multi-page image workflow.
-            page_count = int(getattr(source, "n_frames", 1)) if source.format == "TIFF" else 1
+            page_count = (
+                int(getattr(source, "n_frames", 1)) if source.format == "TIFF" else 1
+            )
             if page_count > MAX_PAGES:
                 raise HTTPException(
                     status_code=422,
@@ -112,21 +163,33 @@ def _image_page_count(data: bytes) -> int:
                 )
             return page_count
     except (UnidentifiedImageError, OSError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="The uploaded image is invalid or corrupted.") from exc
+        raise HTTPException(
+            status_code=422, detail="The uploaded image is invalid or corrupted."
+        ) from exc
 
 
 def _render_image_pages(
-    data: bytes, page_numbers: list[int], max_side: int
+    data: bytes,
+    page_numbers: list[int],
+    max_side: int,
+    min_pixels: int = MIN_IMAGE_PIXELS,
 ) -> list[tuple[int, Image.Image]]:
     try:
         with Image.open(BytesIO(data)) as source:
             rendered = []
             for page_number in page_numbers:
                 source.seek(page_number - 1)
-                rendered.append((page_number, _normalize_image(source.copy(), max_side)))
+                rendered.append(
+                    (
+                        page_number,
+                        _normalize_image(source.copy(), max_side, min_pixels),
+                    )
+                )
             return rendered
     except (UnidentifiedImageError, OSError, EOFError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="The uploaded image is invalid or corrupted.") from exc
+        raise HTTPException(
+            status_code=422, detail="The uploaded image is invalid or corrupted."
+        ) from exc
 
 
 def _open_pdf(data: bytes):
@@ -154,7 +217,13 @@ def _open_pdf(data: bytes):
         ) from exc
 
 
-def _render_pdf_pages(data: bytes, page_numbers: list[int], max_side: int) -> list[tuple[int, Image.Image]]:
+def _render_pdf_pages(
+    data: bytes,
+    page_numbers: list[int],
+    max_side: int,
+    min_pixels: int = MIN_IMAGE_PIXELS,
+) -> list[tuple[int, Image.Image]]:
+    """Split selected PDF pages and rasterize each one as an RGB image."""
     document = _open_pdf(data)
     try:
         rendered: list[tuple[int, Image.Image]] = []
@@ -162,9 +231,18 @@ def _render_pdf_pages(data: bytes, page_numbers: list[int], max_side: int) -> li
             page = document[page_number - 1]
             try:
                 width, height = page.get_size()
-                scale = min(2.0, max_side / max(width, height))
-                image = page.render(scale=scale).to_pil()
-                rendered.append((page_number, _normalize_image(image, max_side)))
+                scale = min(PDF_RENDER_DPI / 72, max_side / max(width, height))
+                bitmap = page.render(scale=scale)
+                try:
+                    image = bitmap.to_pil().convert("RGB")
+                finally:
+                    bitmap.close()
+                rendered.append(
+                    (
+                        page_number,
+                        _normalize_image(image, max_side, min_pixels),
+                    )
+                )
             finally:
                 page.close()
         return rendered
@@ -190,7 +268,9 @@ def _image_data_uri(image: Image.Image) -> str:
 def _preview_data_uri(image: Image.Image) -> str:
     preview = image.copy()
     if max(preview.size) > MAX_PREVIEW_SIDE:
-        preview.thumbnail((MAX_PREVIEW_SIDE, MAX_PREVIEW_SIDE), Image.Resampling.LANCZOS)
+        preview.thumbnail(
+            (MAX_PREVIEW_SIDE, MAX_PREVIEW_SIDE), Image.Resampling.LANCZOS
+        )
     buffer = BytesIO()
     preview.save(buffer, format="JPEG", quality=82, optimize=True)
     preview.close()
@@ -235,45 +315,359 @@ def _parse_page_selection(selection: str | None, page_count: int) -> list[int]:
 
 def _strip_code_fence(content: str) -> str:
     stripped = content.strip()
-    match = re.fullmatch(r"```(?:json|python)?\s*(.*?)\s*```", stripped, re.DOTALL | re.IGNORECASE)
+    match = re.fullmatch(
+        r"```(?:json|python)?\s*(.*?)\s*```", stripped, re.DOTALL | re.IGNORECASE
+    )
     return match.group(1).strip() if match else stripped
 
 
-def _parse_layout(content: str) -> list[LayoutElement]:
-    """Parse MonkeyOCR's JSON/Python-list response without evaluating code."""
-    candidate = _strip_code_fence(content)
-    start, end = candidate.find("["), candidate.rfind("]")
-    if start == -1 or end <= start:
-        return []
-    candidate = candidate[start : end + 1]
+def _extract_balanced_blocks(text: str, left: str, right: str) -> list[str]:
+    blocks: list[str] = []
+    depth = 0
+    start = -1
+    for index, char in enumerate(text):
+        if char == left:
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == right and depth > 0:
+            depth -= 1
+            if depth == 0 and start != -1:
+                blocks.append(text[start : index + 1])
+                start = -1
+    return blocks
 
-    parsed = None
-    for loader in (json.loads, ast.literal_eval):
-        try:
-            parsed = loader(candidate)
-            break
-        except (json.JSONDecodeError, ValueError, SyntaxError):
+
+def _extract_tolerant_list_blocks(text: str) -> list[str]:
+    blocks = _extract_balanced_blocks(text, "[", "]")
+    first = text.find("[")
+    if first != -1:
+        tail = text[first:].strip()
+        missing = tail.count("[") - tail.count("]")
+        if tail and missing > 0:
+            blocks.append(tail + ("]" * missing))
+    return list(dict.fromkeys(blocks))
+
+
+def _extract_tolerant_dict_blocks(text: str) -> list[str]:
+    blocks = _extract_balanced_blocks(text, "{", "}")
+    for index, char in enumerate(text):
+        if char != "{":
             continue
-    if not isinstance(parsed, list):
+        depth = 0
+        end = None
+        for cursor in range(index, len(text)):
+            if text[cursor] == "{":
+                depth += 1
+            elif text[cursor] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = cursor + 1
+                    break
+        blocks.append(
+            text[index:end] if end is not None else text[index:] + ("}" * max(depth, 1))
+        )
+    return list(dict.fromkeys(blocks))
+
+
+def _normalize_layout_item(item: object, include_content: bool) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    bbox = item.get("bbox") or item.get("box") or item.get("coordinates")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return None
+    try:
+        coords = [float(value) for value in bbox]
+    except (TypeError, ValueError):
+        return None
+    label = str(item.get("label") or item.get("category") or item.get("type") or "Text")
+    normalized = {"bbox": coords, "label": label.strip() or "Text"}
+    if include_content:
+        normalized["content"] = str(
+            item.get("content") or item.get("text") or ""
+        ).strip()
+    return normalized
+
+
+def _parse_tolerant_items(content: str, include_content: bool) -> list[dict]:
+    text = _strip_code_fence(content)
+    if not text:
         return []
 
+    def normalize_list(value: object) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        return [
+            item
+            for raw in value
+            if (item := _normalize_layout_item(raw, include_content))
+        ]
+
+    try:
+        parsed = normalize_list(ast.literal_eval(text))
+        if parsed:
+            return parsed
+    except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
+        pass
+
+    best: list[dict] = []
+    for block in _extract_tolerant_list_blocks(text):
+        try:
+            current = normalize_list(ast.literal_eval(block))
+            if len(current) > len(best):
+                best = current
+        except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
+            continue
+
+    dict_items: list[dict] = []
+    for block in _extract_tolerant_dict_blocks(text):
+        try:
+            item = _normalize_layout_item(ast.literal_eval(block), include_content)
+            if item is not None:
+                dict_items.append(item)
+        except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
+            continue
+    return dict_items if len(dict_items) > len(best) else best
+
+
+def _map_bbox_to_image(bbox: list[float], width: int, height: int) -> list[float]:
+    """Map MonkeyOCR's normalized 0–1000 coordinates to page pixels."""
+    x1, y1, x2, y2 = bbox
+    x1, x2 = x1 / 1000.0 * width, x2 / 1000.0 * width
+    y1, y2 = y1 / 1000.0 * height, y2 / 1000.0 * height
+    if x1 > x2:
+        x1, x2 = x2, x1
+    if y1 > y2:
+        y1, y2 = y2, y1
+    x1 = max(0, min(round(x1), width - 1 if width > 0 else 0))
+    y1 = max(0, min(round(y1), height - 1 if height > 0 else 0))
+    x2 = max(x1 + 1, min(round(x2), width))
+    y2 = max(y1 + 1, min(round(y2), height))
+    return [float(x1), float(y1), float(x2), float(y2)]
+
+
+def _parse_layout(
+    content: str,
+    image_size: tuple[int, int] = (1000, 1000),
+    *,
+    include_content: bool = True,
+) -> list[LayoutElement]:
+    """Parse MonkeyOCR output using the official demo's tolerant strategy."""
+    width, height = image_size
     elements: list[LayoutElement] = []
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        bbox = item.get("bbox") or item.get("box") or item.get("coordinates")
-        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-            continue
-        try:
-            coords = [max(0.0, min(1000.0, float(value))) for value in bbox]
-        except (TypeError, ValueError):
-            continue
-        if coords[2] <= coords[0] or coords[3] <= coords[1]:
-            continue
-        label = str(item.get("label") or item.get("category") or item.get("type") or "Text")
-        text = str(item.get("content") or item.get("text") or "").strip()
-        elements.append(LayoutElement(bbox=coords, label=label.strip() or "Text", content=text))
+    for item in _parse_tolerant_items(content, include_content):
+        coords = _map_bbox_to_image(item["bbox"], width, height)
+        text = item.get("content", "")
+        elements.append(LayoutElement(bbox=coords, label=item["label"], content=text))
     return elements
+
+
+def _otsl_to_html(otsl: str) -> str:
+    """Convert MonkeyOCR's OTSL table representation to previewable HTML."""
+    if not otsl or not otsl.strip():
+        return "<table></table>"
+
+    rows = otsl.split("<nl>")
+    if rows and not rows[-1]:
+        rows.pop()
+    grid: list[list[dict | None]] = []
+
+    for row_index, row in enumerate(rows):
+        if row_index >= len(grid):
+            grid.append([])
+        if not row.strip():
+            continue
+
+        column = 0
+        for tag, content in re.findall(
+            r"<([a-z]+)>(.*?)(?=<[a-z]+>|$)", row, flags=re.DOTALL
+        ):
+            while True:
+                while len(grid[row_index]) <= column:
+                    grid[row_index].append(None)
+                if grid[row_index][column] is None:
+                    break
+                column += 1
+
+            if tag in {"fcel", "ecel"}:
+                grid[row_index][column] = {
+                    "text": content.strip() if tag == "fcel" else "",
+                    "rowspan": 1,
+                    "colspan": 1,
+                    "valid": True,
+                }
+            elif tag == "lcel":
+                owner = next(
+                    (
+                        grid[row_index][candidate]
+                        for candidate in range(column - 1, -1, -1)
+                        if grid[row_index][candidate]
+                        and grid[row_index][candidate].get("valid")
+                    ),
+                    None,
+                )
+                if owner:
+                    owner["colspan"] += 1
+                    grid[row_index][column] = {"valid": False}
+                else:
+                    grid[row_index][column] = {
+                        "text": "",
+                        "rowspan": 1,
+                        "colspan": 1,
+                        "valid": True,
+                    }
+            elif tag == "ucel":
+                owner = next(
+                    (
+                        grid[candidate][column]
+                        for candidate in range(row_index - 1, -1, -1)
+                        if len(grid[candidate]) > column
+                        and grid[candidate][column]
+                        and grid[candidate][column].get("valid")
+                    ),
+                    None,
+                )
+                if owner:
+                    owner["rowspan"] += 1
+                    grid[row_index][column] = {"valid": False}
+                else:
+                    grid[row_index][column] = {
+                        "text": "",
+                        "rowspan": 1,
+                        "colspan": 1,
+                        "valid": True,
+                    }
+            elif tag == "xcel":
+                grid[row_index][column] = {"valid": False}
+            column += 1
+
+    html = ["<table>"]
+    for row in grid:
+        html.append("<tr>")
+        for cell in row:
+            if not cell or not cell.get("valid"):
+                continue
+            attributes = []
+            if cell["rowspan"] > 1:
+                attributes.append(f'rowspan="{cell["rowspan"]}"')
+            if cell["colspan"] > 1:
+                attributes.append(f'colspan="{cell["colspan"]}"')
+            attribute_text = " " + " ".join(attributes) if attributes else ""
+            cell_text = "<br>".join(
+                escape(part)
+                for part in str(cell["text"])
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .split("\n")
+            )
+            html.append(f"<td{attribute_text}>{cell_text}</td>")
+        html.append("</tr>")
+    html.append("</table>")
+    return "".join(html)
+
+
+def _process_formula(content: str) -> str:
+    content = content.strip("$").strip()
+    content = re.sub(r"(?:\\quad\s*){5,}", r"\\quad ", content)
+    content = re.sub(r"(?:\\qquad\s*){5,}", r"\\qquad ", content).strip()
+
+    equation_number = None
+    number_pattern = (
+        r"(?:\\quad|\\qquad|\\eqno)\s*\(([^()]*)\)\s*$|\\tag\{([^{}]*)\}\s*$"
+    )
+    match = re.search(number_pattern, content)
+    if match:
+        equation_number = match.group(1) or match.group(2)
+        content = content[: match.start()].rstrip()
+
+    begin_environment = None
+    begin_match = re.match(r"^\\begin\{([^}]+)\}", content)
+    if begin_match:
+        begin_environment = begin_match.group(1)
+        content = content[begin_match.end() :].lstrip()
+        end_match = re.search(
+            rf"\\end\{{{re.escape(begin_environment)}\}}\s*$", content
+        )
+        if end_match:
+            content = content[: end_match.start()].rstrip()
+
+    match = re.search(number_pattern, content)
+    if match:
+        equation_number = match.group(1) or match.group(2)
+        content = content[: match.start()].rstrip()
+    if begin_environment:
+        content = (
+            f"\\begin{{{begin_environment}}}\n{content}\n\\end{{{begin_environment}}}"
+        )
+
+    rendered = f"$$\n{content}\n$$"
+    return f"{rendered}\n{equation_number}" if equation_number else rendered
+
+
+TABLE_IMAGE_PATTERN = re.compile(
+    r"\[img\]\s*\[\s*(-?\d+(?:\.\d+)?)\s*,\s*"
+    r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*"
+    r"(-?\d+(?:\.\d+)?)\s*\]\s*\[/img\]",
+    flags=re.IGNORECASE,
+)
+
+
+def _replace_table_images(content: str, table_image: Image.Image | None) -> str:
+    if table_image is None or not TABLE_IMAGE_PATTERN.search(content):
+        return content
+    references: dict[tuple[float, ...], str] = {}
+
+    def replace(match: re.Match) -> str:
+        normalized_bbox = tuple(float(value) for value in match.groups())
+        image_uri = references.get(normalized_bbox)
+        if image_uri is None:
+            bbox = _map_bbox_to_image(list(normalized_bbox), *table_image.size)
+            embedded = table_image.crop(tuple(round(value) for value in bbox))
+            try:
+                image_uri = _image_data_uri(embedded)
+            finally:
+                embedded.close()
+            references[normalized_bbox] = image_uri
+        return (
+            f'<img src="{escape(image_uri, quote=True)}" alt="embedded table image" />'
+        )
+
+    return TABLE_IMAGE_PATTERN.sub(replace, content)
+
+
+def _normalized_label(label: str) -> str:
+    return re.sub(r"[\s_]+", "-", label.strip().lower())
+
+
+def _format_element_content(
+    element: LayoutElement, crop: Image.Image | None = None
+) -> str:
+    content = element.content.strip()
+    label = _normalized_label(element.label)
+    if label == "formula":
+        return content if content.startswith("$$") else _process_formula(content)
+    if label == "table":
+        table = (
+            content
+            if content.lstrip().lower().startswith("<table")
+            else _otsl_to_html(content)
+        )
+        return _replace_table_images(table, crop)
+    if label in {"picture", "image", "figure"} and crop is not None:
+        return f"![image]({_image_data_uri(crop)})"
+    if label in {"title", "document-title"}:
+        return (
+            content
+            if content.startswith("# ")
+            else "# " + content.replace("\n", "\n# ")
+        )
+    if label in {"section-header", "heading", "header"}:
+        return (
+            content
+            if content.startswith("## ")
+            else "## " + content.replace("\n", "\n## ")
+        )
+    return content
 
 
 def _elements_to_markdown(elements: list[LayoutElement], fallback: str) -> str:
@@ -282,22 +676,16 @@ def _elements_to_markdown(elements: list[LayoutElement], fallback: str) -> str:
 
     blocks: list[str] = []
     for element in elements:
-        content = element.content.strip()
+        if not KEEP_HEADER_FOOTER and _normalized_label(element.label) in {
+            "page-header",
+            "page-footer",
+        }:
+            continue
+        content = _format_element_content(element)
         if not content:
             continue
-        label = re.sub(r"[\s_-]+", " ", element.label.strip().lower())
-        if label in {"title", "document title"}:
-            block = content if content.startswith("#") else f"# {content}"
-        elif label in {"section header", "heading", "header"}:
-            block = content if content.startswith("#") else f"## {content}"
-        elif label in {"formula", "equation", "display formula"}:
-            block = content if content.startswith(("$", "\\[")) else f"$$\n{content}\n$$"
-        elif label in {"figure", "image", "picture", "chart"}:
-            block = f"> **{element.label}:** {content}"
-        else:
-            block = content
-        blocks.append(block)
-    return "\n\n".join(blocks).strip()
+        blocks.append(content)
+    return "\n\n".join(blocks).replace("�", "").strip()
 
 
 async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
@@ -320,36 +708,50 @@ async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
     return data, content_type
 
 
-async def _ocr_page(client: httpx.AsyncClient, image: Image.Image, page_number: int) -> str:
+async def _request_ocr(
+    client: httpx.AsyncClient,
+    image: Image.Image,
+    prompt: str,
+    page_number: int,
+    semaphore: asyncio.Semaphore,
+    *,
+    max_tokens: int | None = None,
+) -> str:
     payload = {
         "model": MODEL,
         "temperature": 0,
-        "max_tokens": 8192,
         "messages": [
             {
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": _image_data_uri(image)}},
-                    {"type": "text", "text": PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ],
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
 
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            response = await client.post("/chat/completions", json=payload)
+            async with semaphore:
+                response = await client.post("/chat/completions", json=payload)
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise ValueError("empty model response")
             return content
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+        except (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.HTTPStatusError,
+        ) as exc:
             last_error = exc
-            retryable = not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code in {
-                429, 500, 502, 503, 504
-            }
+            retryable = not isinstance(
+                exc, httpx.HTTPStatusError
+            ) or exc.response.status_code in {429, 500, 502, 503, 504}
             if not retryable or attempt == 2:
                 break
             await asyncio.sleep(0.5 * (2**attempt))
@@ -367,13 +769,101 @@ async def _ocr_page(client: httpx.AsyncClient, image: Image.Image, page_number: 
     raise HTTPException(status_code=502, detail=detail)
 
 
+def _crop_element(image: Image.Image, element: LayoutElement) -> Image.Image:
+    return image.crop(tuple(round(value) for value in element.bbox))
+
+
+async def _recognize_layout_elements(
+    client: httpx.AsyncClient,
+    image: Image.Image,
+    elements: list[LayoutElement],
+    page_number: int,
+    semaphore: asyncio.Semaphore,
+) -> list[LayoutElement]:
+    async def recognize(element: LayoutElement) -> LayoutElement:
+        crop = _crop_element(image, element)
+        try:
+            prompt = MONKEYOCR_PROMPTS.get(element.label)
+            if prompt:
+                raw_content = await _request_ocr(
+                    client,
+                    crop,
+                    prompt,
+                    page_number,
+                    semaphore,
+                    max_tokens=4096 if element.label == "Table" else 5000,
+                )
+                source = LayoutElement(
+                    bbox=element.bbox, label=element.label, content=raw_content
+                )
+                content = _format_element_content(source, crop)
+            elif _normalized_label(element.label) in {"picture", "image", "figure"}:
+                content = _format_element_content(element, crop)
+            else:
+                content = ""
+            return LayoutElement(
+                bbox=element.bbox, label=element.label, content=content
+            )
+        finally:
+            crop.close()
+
+    return list(await asyncio.gather(*(recognize(element) for element in elements)))
+
+
+async def _ocr_page(
+    client: httpx.AsyncClient,
+    image: Image.Image,
+    page_number: int,
+    semaphore: asyncio.Semaphore,
+) -> tuple[str, list[LayoutElement]]:
+    if PIPELINE_MODE == "end2end":
+        raw = await _request_ocr(
+            client,
+            image,
+            END2END_PROMPT,
+            page_number,
+            semaphore,
+            max_tokens=8192,
+        )
+        elements = _parse_layout(raw, image.size)
+        formatted: list[LayoutElement] = []
+        for element in elements:
+            crop = _crop_element(image, element)
+            try:
+                formatted.append(
+                    LayoutElement(
+                        bbox=element.bbox,
+                        label=element.label,
+                        content=_format_element_content(element, crop),
+                    )
+                )
+            finally:
+                crop.close()
+        return raw, formatted
+
+    raw = await _request_ocr(
+        client,
+        image,
+        MONKEYOCR_PROMPTS["LAYOUT"],
+        page_number,
+        semaphore,
+        max_tokens=4096,
+    )
+    layout = _parse_layout(raw, image.size, include_content=False)
+    return raw, await _recognize_layout_elements(
+        client, image, layout, page_number, semaphore
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.ocr_client = httpx.AsyncClient(
         base_url=API_BASE_URL,
         timeout=httpx.Timeout(REQUEST_TIMEOUT),
         limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        headers={"Authorization": f"Bearer {os.getenv('MONKEYOCR_API_KEY', 'not-required')}"},
+        headers={
+            "Authorization": f"Bearer {os.getenv('MONKEYOCR_API_KEY', 'not-required')}"
+        },
     )
     yield
     await app.state.ocr_client.aclose()
@@ -381,7 +871,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ParseAnything",
-    version="1.1.0",
+    version="1.2.0",
     description="Image and PDF parsing backed by MonkeyOCRv2.",
     lifespan=lifespan,
 )
@@ -394,10 +884,22 @@ async def health(request: Request) -> HealthResponse:
         response.raise_for_status()
         models = {item.get("id") for item in response.json().get("data", [])}
         if MODEL not in models:
-            return HealthResponse(status="degraded", model=MODEL, upstream="model unavailable")
-        return HealthResponse(status="ok", model=MODEL, upstream="connected")
+            return HealthResponse(
+                status="degraded",
+                model=MODEL,
+                upstream="model unavailable",
+                pipeline=PIPELINE_MODE,
+            )
+        return HealthResponse(
+            status="ok", model=MODEL, upstream="connected", pipeline=PIPELINE_MODE
+        )
     except Exception:
-        return HealthResponse(status="degraded", model=MODEL, upstream="unreachable")
+        return HealthResponse(
+            status="degraded",
+            model=MODEL,
+            upstream="unreachable",
+            pipeline=PIPELINE_MODE,
+        )
 
 
 @app.post("/api/preview", response_model=PreviewResponse)
@@ -407,12 +909,20 @@ async def preview_document(file: UploadFile = File(...)) -> PreviewResponse:
     if content_type == PDF_TYPE:
         page_count = await asyncio.to_thread(_pdf_page_count, data)
         rendered = await asyncio.to_thread(
-            _render_pdf_pages, data, list(range(1, page_count + 1)), MAX_PREVIEW_SIDE
+            _render_pdf_pages,
+            data,
+            list(range(1, page_count + 1)),
+            MAX_PREVIEW_SIDE,
+            0,
         )
     else:
         page_count = await asyncio.to_thread(_image_page_count, data)
         rendered = await asyncio.to_thread(
-            _render_image_pages, data, list(range(1, page_count + 1)), MAX_PREVIEW_SIDE
+            _render_image_pages,
+            data,
+            list(range(1, page_count + 1)),
+            MAX_PREVIEW_SIDE,
+            0,
         )
 
     try:
@@ -438,39 +948,63 @@ async def parse_document(
     if content_type == PDF_TYPE:
         source_page_count = await asyncio.to_thread(_pdf_page_count, data)
         page_numbers = _parse_page_selection(selected_pages, source_page_count)
-        rendered = await asyncio.to_thread(_render_pdf_pages, data, page_numbers, MAX_IMAGE_SIDE)
+        rendered = await asyncio.to_thread(
+            _render_pdf_pages,
+            data,
+            page_numbers,
+            MAX_IMAGE_SIDE,
+            MIN_IMAGE_PIXELS,
+        )
     else:
         source_page_count = await asyncio.to_thread(_image_page_count, data)
         page_numbers = _parse_page_selection(selected_pages, source_page_count)
         rendered = await asyncio.to_thread(
-            _render_image_pages, data, page_numbers, MAX_IMAGE_SIDE
+            _render_image_pages,
+            data,
+            page_numbers,
+            MAX_IMAGE_SIDE,
+            MIN_IMAGE_PIXELS,
         )
 
     started = perf_counter()
-    semaphore = asyncio.Semaphore(max(1, OCR_CONCURRENCY))
+    request_semaphore = asyncio.Semaphore(max(1, OCR_CONCURRENCY))
 
     async def parse_page(page_number: int, image: Image.Image) -> PageResult:
-        async with semaphore:
-            try:
-                raw, image_url = await asyncio.gather(
-                    _ocr_page(request.app.state.ocr_client, image, page_number),
-                    asyncio.to_thread(_preview_data_uri, image),
-                )
-                elements = _parse_layout(raw)
-                return PageResult(
-                    page_number=page_number,
-                    markdown=_elements_to_markdown(elements, raw),
-                    raw=raw,
-                    elements=elements,
-                    image_url=image_url,
-                )
-            finally:
-                image.close()
+        try:
+            (raw, elements), image_url = await asyncio.gather(
+                _ocr_page(
+                    request.app.state.ocr_client,
+                    image,
+                    page_number,
+                    request_semaphore,
+                ),
+                asyncio.to_thread(_preview_data_uri, image),
+            )
+            return PageResult(
+                page_number=page_number,
+                markdown=_elements_to_markdown(
+                    elements, raw if PIPELINE_MODE == "end2end" else ""
+                ),
+                raw=raw,
+                elements=elements,
+                image_url=image_url,
+                image_width=image.width,
+                image_height=image.height,
+            )
+        finally:
+            image.close()
 
-    results = await asyncio.gather(*(parse_page(number, image) for number, image in rendered))
+    results = await asyncio.gather(
+        *(parse_page(number, image) for number, image in rendered)
+    )
     markdown_pages = [result.markdown for result in results]
-    combined = markdown_pages[0] if len(results) == 1 else "\n\n".join(
-        f"<!-- Page {result.page_number} -->\n\n{result.markdown}" for result in results
+    combined = (
+        markdown_pages[0]
+        if len(results) == 1
+        else "\n\n".join(
+            f"<!-- Page {result.page_number} -->\n\n{result.markdown}"
+            for result in results
+        )
     )
 
     return ParseResponse(
@@ -488,7 +1022,9 @@ async def parse_document(
 @app.get("/sample")
 async def sample() -> Response:
     if SAMPLE_IMAGE.exists():
-        return FileResponse(SAMPLE_IMAGE, media_type="image/png", filename="page-62.png")
+        return FileResponse(
+            SAMPLE_IMAGE, media_type="image/png", filename="page-62.png"
+        )
 
     image = Image.new("RGB", (1000, 1300), "white")
     draw = ImageDraw.Draw(image)
@@ -498,7 +1034,9 @@ async def sample() -> Response:
     except OSError:
         title_font = body_font = ImageFont.load_default()
     draw.text((90, 100), "MONKEYOCR SAMPLE", fill="#186f4b", font=body_font)
-    draw.text((90, 175), "Document intelligence report", fill="#151714", font=title_font)
+    draw.text(
+        (90, 175), "Document intelligence report", fill="#151714", font=title_font
+    )
     draw.line((90, 225, 910, 225), fill="#d8d7d0", width=3)
     draw.text((90, 285), "Revenue", fill="#151714", font=body_font)
     draw.text((720, 285), "$12,500", fill="#151714", font=body_font)

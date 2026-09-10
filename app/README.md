@@ -39,10 +39,15 @@ API documentation is available at <http://127.0.0.1:8000/docs>.
 | `VLLM_URL` | `http://127.0.0.1:8888/v1` outside Docker |
 | `MONKEYOCR_MODEL` | `MonkeyOCRv2` |
 | `MONKEYOCR_API_KEY` | `not-required` |
-| `MONKEYOCR_PROMPT` | Official end-to-end parsing prompt |
+| `MONKEYOCR_PIPELINE_MODE` | `staged` (official layout-then-recognition flow) |
+| `MONKEYOCR_KEEP_HEADER_FOOTER` | `false` |
+| `MONKEYOCR_PROMPT` | Official prompt; used only in `end2end` mode |
 | `MAX_UPLOAD_MB` | `30` |
 | `MAX_PDF_PAGES` | `20` |
+| `MAX_IMAGE_SIDE` | `3200` |
+| `MIN_IMAGE_PIXELS` | `1003520` (upscale smaller OCR images) |
 | `MAX_PREVIEW_SIDE` | `1200` |
+| `PDF_RENDER_DPI` | `200` |
 | `OCR_CONCURRENCY` | `3` |
 | `OCR_TIMEOUT_SECONDS` | `300` |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` (`PORT` is the published port in Compose) |
@@ -52,11 +57,18 @@ The Compose example uses `host.docker.internal` so a vLLM server running on the
 Docker host is reachable from the application container.
 
 The UI prepares thumbnail previews for multi-page PDFs and TIFFs so individual
-pages can be selected before OCR. The backend parses MonkeyOCR's JSON or
-Python-list layout response into normalized bounding boxes and Markdown, then
-returns both a rendered page image and structured elements for every selected
-page. Results can be switched between a sanitized Markdown preview and an SVG
-layout overlay; Markdown can also be copied or downloaded.
+pages can be selected before OCR. Like the
+[official MonkeyOCRv2 Gradio demo](https://github.com/Yuliang-Liu/MonkeyOCRv2/blob/main/parsing/demo/gradio_demo.py),
+PDFs are split into selected pages and rasterized as separate RGB images. Small
+page and image inputs are upscaled to `MIN_IMAGE_PIXELS` before the default
+pipeline detects the ordered page layout and recognizes each crop with the
+prompt appropriate for text, formulas, or OTSL tables.
+Picture crops are embedded directly in the Markdown. Set
+`MONKEYOCR_PIPELINE_MODE` to `end2end` to use a single request per page instead.
+
+Bounding boxes are returned in page-pixel coordinates together with the page
+dimensions. Results can be switched between sanitized Markdown, the zoomable
+layout overlay, and raw Markdown; Markdown can also be copied or downloaded.
 
 ## API
 
