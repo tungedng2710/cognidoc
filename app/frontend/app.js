@@ -476,7 +476,7 @@ async function checkHealth() {
     const response = await fetch("/api/health"); const data = await response.json();
     const healthy = response.ok && data.status === "ok";
     ui.serviceStatus.className = `service-status ${healthy ? "ok" : "error"}`;
-    ui.serviceLabel.textContent = healthy ? `${data.model} online` : "Service degraded";
+    ui.serviceLabel.textContent = healthy ? "Service online" : "Service degraded";
   } catch {
     ui.serviceStatus.className = "service-status error"; ui.serviceLabel.textContent = "Service offline";
   }
