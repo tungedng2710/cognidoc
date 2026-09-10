@@ -39,6 +39,7 @@ API documentation is available at <http://127.0.0.1:8000/docs>.
 | `VLLM_URL` | `http://127.0.0.1:8888/v1` outside Docker |
 | `MONKEYOCR_MODEL` | `MonkeyOCRv2` |
 | `MONKEYOCR_API_KEY` | `not-required` |
+| `MONKEYOCR_MAX_PIXELS` | `1003520` (official vLLM image budget) |
 | `MONKEYOCR_PIPELINE_MODE` | `staged` (official layout-then-recognition flow) |
 | `MONKEYOCR_KEEP_HEADER_FOOTER` | `false` |
 | `MONKEYOCR_PROMPT` | Official prompt; used only in `end2end` mode |

@@ -56,6 +56,7 @@ MAX_IMAGE_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "3200"))
 MIN_IMAGE_PIXELS = max(0, int(os.getenv("MIN_IMAGE_PIXELS", "1003520")))
 MAX_PREVIEW_SIDE = int(os.getenv("MAX_PREVIEW_SIDE", "1200"))
 PDF_RENDER_DPI = max(72, int(os.getenv("PDF_RENDER_DPI", "200")))
+MODEL_MAX_PIXELS = max(1, int(os.getenv("MONKEYOCR_MAX_PIXELS", "1003520")))
 OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "3"))
 REQUEST_TIMEOUT = float(os.getenv("OCR_TIMEOUT_SECONDS", "300"))
 HTTP_MAX_RETRIES = max(0, int(os.getenv("OCR_HTTP_RETRIES", "5")))
@@ -149,6 +150,32 @@ def _normalize_image(
         )
         image = image.resize(target, Image.Resampling.LANCZOS)
     return image
+
+
+def _prepare_model_image(
+    image: Image.Image,
+    *,
+    min_pixels: int = 0,
+    max_pixels: int = MODEL_MAX_PIXELS,
+) -> Image.Image:
+    """Match the pixel budget used by the official MonkeyOCR server client."""
+    width, height = image.size
+    pixels = width * height
+    scale = 1.0
+    rounding = round
+    if min_pixels > 0 and pixels < min_pixels:
+        scale = math.sqrt(min_pixels / pixels)
+        rounding = math.ceil
+    if max_pixels > 0 and pixels * scale * scale > max_pixels:
+        scale = math.sqrt(max_pixels / pixels)
+        rounding = math.floor
+    if math.isclose(scale, 1.0):
+        return image
+    target = (
+        max(1, int(rounding(width * scale))),
+        max(1, int(rounding(height * scale))),
+    )
+    return image.resize(target, Image.Resampling.LANCZOS)
 
 
 def _image_page_count(data: bytes) -> int:
@@ -458,8 +485,13 @@ def _parse_layout(
     """Parse MonkeyOCR output using the official demo's tolerant strategy."""
     width, height = image_size
     elements: list[LayoutElement] = []
+    seen: set[tuple[tuple[float, ...], str]] = set()
     for item in _parse_tolerant_items(content, include_content):
         coords = _map_bbox_to_image(item["bbox"], width, height)
+        identity = (tuple(coords), item["label"])
+        if identity in seen:
+            continue
+        seen.add(identity)
         text = item.get("content", "")
         elements.append(LayoutElement(bbox=coords, label=item["label"], content=text))
     return elements
@@ -789,14 +821,22 @@ async def _request_ocr(
     *,
     max_tokens: int | None = None,
     retry_repetition: bool = True,
+    min_pixels: int = 0,
 ) -> str:
+    prepared_image = _prepare_model_image(image, min_pixels=min_pixels)
+    try:
+        image_url = _image_data_uri(prepared_image)
+    finally:
+        if prepared_image is not image:
+            prepared_image.close()
+
     payload = {
         "model": MODEL,
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": _image_data_uri(image)}},
+                    {"type": "image_url", "image_url": {"url": image_url}},
                     {"type": "text", "text": prompt},
                 ],
             }
@@ -905,6 +945,7 @@ async def _ocr_page(
         semaphore,
         max_tokens=4096,
         retry_repetition=False,
+        min_pixels=MIN_IMAGE_PIXELS,
     )
     layout = _parse_layout(raw, image.size, include_content=False)
     return raw, await _recognize_layout_elements(

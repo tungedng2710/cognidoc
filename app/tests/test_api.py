@@ -9,6 +9,7 @@ from PIL import Image
 from backend.main import (
     MAX_IMAGE_SIDE,
     MIN_IMAGE_PIXELS,
+    MODEL_MAX_PIXELS,
     _detect_repeat_token,
     _elements_to_markdown,
     _map_bbox_to_image,
@@ -16,6 +17,7 @@ from backend.main import (
     _parse_layout,
     _parse_page_selection,
     _process_formula,
+    _prepare_model_image,
     _normalize_image,
     _replace_table_images,
     app,
@@ -174,7 +176,8 @@ def test_parse_pdf():
     assert response.json()["page_results"][0]["page_number"] == 2
     assert calls == 2
     assert len(layout_image_sizes) == 1
-    assert layout_image_sizes[0][0] * layout_image_sizes[0][1] >= MIN_IMAGE_PIXELS
+    layout_pixels = layout_image_sizes[0][0] * layout_image_sizes[0][1]
+    assert abs(layout_pixels - MODEL_MAX_PIXELS) / MODEL_MAX_PIXELS < 0.01
 
 
 def test_preview_pdf_pages():
@@ -273,6 +276,25 @@ def test_small_images_are_upscaled_for_ocr_without_exceeding_max_side():
         source.close()
 
 
+def test_model_images_use_the_official_pixel_budget():
+    source = Image.new("RGB", (1700, 2200), "white")
+    result = _prepare_model_image(
+        source,
+        min_pixels=MODEL_MAX_PIXELS,
+        max_pixels=MODEL_MAX_PIXELS,
+    )
+    try:
+        assert (
+            abs(result.width * result.height - MODEL_MAX_PIXELS) / MODEL_MAX_PIXELS
+            < 0.01
+        )
+        assert result.size != source.size
+        assert abs(result.width / result.height - source.width / source.height) < 0.01
+    finally:
+        result.close()
+        source.close()
+
+
 def test_monkey_output_parser_recovers_items_and_maps_pixel_boxes():
     raw = """Layout follows:
     {'bbox': [800, 900, 100, 200], 'label': 'Text'},
@@ -290,6 +312,15 @@ def test_monkey_output_parser_recovers_items_and_maps_pixel_boxes():
         51.0,
         51.0,
     ]
+
+
+def test_layout_parser_deduplicates_repeated_boxes():
+    repeated = (
+        "[{'bbox': [10, 20, 300, 80], 'label': 'Text'}, "
+        "{'bbox': [10, 20, 300, 80], 'label': 'Text'}]"
+    )
+
+    assert len(_parse_layout(repeated)) == 1
 
 
 def test_otsl_tables_are_rendered_as_html():
