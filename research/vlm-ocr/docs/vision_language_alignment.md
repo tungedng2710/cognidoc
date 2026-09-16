@@ -39,8 +39,8 @@ directory is useful for vision-only inspection but is not a full VLM.
 Run commands in the project environment:
 
 ```bash
-conda activate tungn197
-cd /root/tungn197/cognidoc/research/vlm-ocr
+conda activate main
+cd /root/main/cognidoc/research/vlm-ocr
 ```
 
 ## Alignment Dataset

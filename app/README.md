@@ -25,7 +25,7 @@ For local development without Docker:
 
 ```bash
 source /media/drive-2t/miniconda3/etc/profile.d/conda.sh
-conda activate tungn197
+conda activate main
 pip install -r requirements.txt
 python app.py
 ```

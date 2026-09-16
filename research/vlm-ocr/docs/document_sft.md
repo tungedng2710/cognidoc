@@ -27,7 +27,7 @@ The benchmark loads one Chandra model and evaluates these states sequentially:
 Run it on one GPU:
 
 ```bash
-conda activate tungn197
+conda activate main
 CUDA_VISIBLE_DEVICES=0 python benchmark_alignment.py \
   --config configs/benchmark_alignment_local.yaml
 ```
@@ -181,7 +181,7 @@ For single-image inference, use the included CLI. It reads the manifest and
 applies every checkpoint in the required order automatically:
 
 ```bash
-conda activate tungn197
+conda activate main
 CUDA_VISIBLE_DEVICES=0 python infer_single.py test_samples/test1.png \
   --sft-dir outputs/chandra2-sft \
   --output outputs/chandra2-sft/test1-inference.json \

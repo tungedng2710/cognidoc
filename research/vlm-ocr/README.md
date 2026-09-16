@@ -17,14 +17,14 @@ and transformer blocks.
 Run commands through the requested environment:
 
 ```bash
-conda activate tungn197
+conda activate main
 ```
 
 The checked-out test dataset contains a uniform random sample copied from the
 source corpus. To reproduce it into an empty directory with a fixed seed:
 
 ```bash
-python sample_images.py /media/drive-2t/tungn197/idp/data/images sample_dataset \
+python sample_images.py /media/drive-2t/main/idp/data/images sample_dataset \
   --count 10000 --seed 42
 ```
 

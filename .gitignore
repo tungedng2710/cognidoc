@@ -264,3 +264,6 @@ asssets/test_samples
 /app/.env
 !/app/.env.example
 !/app/.dockerignore
+
+# ExtractAnything sensitive data
+NuExtract/data

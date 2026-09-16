@@ -89,7 +89,7 @@ updates where the clipping bound becomes active, at additional compute cost.
 Activate the requested environment and install any missing dependencies:
 
 ```bash
-conda activate tungn197
+conda activate main
 pip install -U unsloth unsloth_zoo datasets trl accelerate pillow torch
 ```
 
@@ -108,7 +108,7 @@ Torch gated-delta fallback for both generation and training.
 Run unit tests and a dataset dry run before allocating the model:
 
 ```bash
-conda activate tungn197
+conda activate main
 python -m unittest -v test_reward.py test_loss.py
 python -m unittest -v test_grpo.py test_sft.py
 python sft.py --dry-run --max-train-samples 16 --max-eval-samples 8
@@ -121,7 +121,7 @@ The default SFT run uses 4-bit QLoRA, completion-only loss, a batch size of one,
 eight accumulation steps, and one epoch:
 
 ```bash
-conda activate tungn197
+conda activate main
 python sft.py
 ```
 
@@ -141,7 +141,7 @@ The loader detects its PEFT configuration and continues that adapter instead of
 creating a second one:
 
 ```bash
-conda activate tungn197
+conda activate main
 python grpo.py \
   --model-name chandra_ocr_2_table_html_sft \
   --output-dir chandra_ocr_2_table_html_sft_grpo
