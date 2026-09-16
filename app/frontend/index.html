@@ -94,7 +94,12 @@
             <label class="include-control"><input id="element-include-input" type="checkbox"> Include this element in Markdown</label>
             <div class="element-editor-actions"><button id="element-editor-cancel" type="button">Cancel</button><button id="element-editor-save" type="button">Save changes</button></div>
           </section>
-          <div class="processing" id="processing" hidden><div class="scan-line"></div><span>Reading document structure…</span></div>
+          <div class="processing" id="processing" hidden>
+            <div class="processing-thumbnail" id="processing-thumbnail" hidden>
+              <img id="processing-image" alt="First page being parsed">
+            </div>
+            <span>Reading document structure…</span>
+          </div>
         </div>
         <div class="result-meta"><span id="result-stats">Awaiting document</span><span>MARKDOWN / UTF-8</span></div>
       </article>

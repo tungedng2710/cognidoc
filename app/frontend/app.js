@@ -9,7 +9,8 @@ const ui = {
   selectNone: $("#select-none-button"), batchSize: $("#batch-size"),
   batchDecrease: $("#batch-decrease"), batchIncrease: $("#batch-increase"),
   outputEmpty: $("#output-empty"),
-  processing: $("#processing"), markdown: $("#markdown-preview"),
+  processing: $("#processing"), processingThumbnail: $("#processing-thumbnail"),
+  processingImage: $("#processing-image"), markdown: $("#markdown-preview"),
   layout: $("#layout-preview"), layoutImage: $("#layout-image"),
   layoutStage: $("#layout-stage"), layoutCanvas: $("#layout-canvas"),
   layoutOverlay: $("#layout-overlay"), layoutLegend: $("#layout-legend"),
@@ -103,6 +104,10 @@ function clearResult() {
   ui.outputEmpty.hidden = false;
   ui.outputEmpty.querySelector("p").textContent = "Your parsed document will appear here.";
   ui.processing.hidden = true;
+  ui.processingThumbnail.hidden = true;
+  ui.processingThumbnail.style.aspectRatio = "";
+  ui.processingImage.onload = null;
+  ui.processingImage.removeAttribute("src");
   ui.resultToolbar.hidden = true;
   ui.copy.disabled = true;
   ui.download.disabled = true;
@@ -193,6 +198,26 @@ function renderPdfPreviews(pages) {
   ui.pdfPages.hidden = false;
   ui.pageTools.hidden = false;
   updatePageSelection();
+}
+
+function showProcessingPreview() {
+  const firstSelectedCard = [...ui.pdfPages.querySelectorAll(".page-card")]
+    .find((card) => selectedPages.has(Number(card.dataset.page)));
+  const sourceImage = firstSelectedCard?.querySelector("img") || (!ui.image.hidden ? ui.image : null);
+  if (!sourceImage?.src) {
+    ui.processingThumbnail.hidden = true;
+    ui.processingImage.removeAttribute("src");
+    return;
+  }
+  const updateAspectRatio = () => {
+    const width = ui.processingImage.naturalWidth || sourceImage.naturalWidth;
+    const height = ui.processingImage.naturalHeight || sourceImage.naturalHeight;
+    ui.processingThumbnail.style.aspectRatio = width && height ? `${width} / ${height}` : "3 / 4";
+  };
+  ui.processingImage.onload = updateAspectRatio;
+  ui.processingImage.src = sourceImage.src;
+  updateAspectRatio();
+  ui.processingThumbnail.hidden = false;
 }
 
 async function inspectMultiPageFile(file, version) {
@@ -646,7 +671,7 @@ async function runOcr() {
   if (!selectedFile || !selectedPages.size) return;
   ui.run.disabled = true; ui.clear.disabled = true; ui.outputEmpty.hidden = true;
   ui.markdown.hidden = true; ui.layout.hidden = true; ui.raw.hidden = true; ui.resultToolbar.hidden = true;
-  ui.processing.hidden = false; setStatus("Processing document");
+  showProcessingPreview(); ui.processing.hidden = false; setStatus("Processing document");
   const form = new FormData();
   form.append("file", selectedFile);
   form.append("selected_pages", [...selectedPages].sort((a, b) => a - b).join(","));
