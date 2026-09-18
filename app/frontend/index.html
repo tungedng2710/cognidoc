@@ -65,7 +65,13 @@
               <button id="zoom-reset-button" type="button" aria-label="Reset zoom">100%</button>
               <button id="zoom-in-button" type="button" aria-label="Zoom in">+</button>
             </div>
-            <label class="page-navigator">Page <select id="result-page"></select></label>
+            <div class="page-navigator" id="page-navigator" hidden aria-label="Result page navigation">
+              <button id="previous-page-button" type="button">Previous</button>
+              <label for="result-page">Page</label>
+              <input id="result-page" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to result page">
+              <span id="result-page-total" aria-hidden="true"></span>
+              <button id="next-page-button" type="button">Next</button>
+            </div>
           </div>
         </div>
         <div class="output-shell">

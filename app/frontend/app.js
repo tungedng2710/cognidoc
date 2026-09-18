@@ -15,6 +15,8 @@ const ui = {
   layoutStage: $("#layout-stage"), layoutCanvas: $("#layout-canvas"),
   layoutOverlay: $("#layout-overlay"), layoutLegend: $("#layout-legend"),
   resultToolbar: $("#result-toolbar"), resultPage: $("#result-page"),
+  pageNavigator: $("#page-navigator"), resultPageTotal: $("#result-page-total"),
+  previousPage: $("#previous-page-button"), nextPage: $("#next-page-button"),
   markdownTab: $("#markdown-tab"), layoutTab: $("#layout-tab"), rawTab: $("#raw-tab"),
   raw: $("#raw-markdown"),
   zoomControls: $("#zoom-controls"), zoomOut: $("#zoom-out-button"),
@@ -109,6 +111,11 @@ function clearResult() {
   ui.processingImage.onload = null;
   ui.processingImage.removeAttribute("src");
   ui.resultToolbar.hidden = true;
+  ui.pageNavigator.hidden = true;
+  ui.resultPage.value = "";
+  delete ui.resultPage.dataset.currentPage;
+  ui.previousPage.disabled = true;
+  ui.nextPage.disabled = true;
   ui.copy.disabled = true;
   ui.download.disabled = true;
   ui.jsonDownload.disabled = true;
@@ -616,10 +623,31 @@ function showResultPage(pageNumber) {
   const page = pageResults.find((item) => item.page_number === Number(pageNumber));
   if (!page) return;
   ui.resultPage.value = String(page.page_number);
+  ui.resultPage.dataset.currentPage = String(page.page_number);
+  const pageIndex = pageResults.indexOf(page);
+  ui.previousPage.disabled = pageIndex === 0;
+  ui.nextPage.disabled = pageIndex === pageResults.length - 1;
   renderMarkdown(page.markdown);
   ui.raw.textContent = page.markdown;
   renderLayout(page);
   setActiveView(activeView);
+}
+
+function moveResultPage(offset) {
+  const currentPage = Number(ui.resultPage.dataset.currentPage);
+  const currentIndex = pageResults.findIndex((page) => page.page_number === currentPage);
+  const target = pageResults[currentIndex + offset];
+  if (target) showResultPage(target.page_number);
+}
+
+function jumpToResultPage() {
+  const requestedPage = Number(ui.resultPage.value);
+  const target = pageResults.find((page) => page.page_number === requestedPage);
+  if (target) {
+    showResultPage(target.page_number);
+    return;
+  }
+  ui.resultPage.value = ui.resultPage.dataset.currentPage || "";
 }
 
 function setActiveView(view) {
@@ -653,13 +681,11 @@ function populateResults(data) {
     elapsed_seconds: data.elapsed_seconds,
   };
   resultEdited = false;
-  ui.resultPage.replaceChildren();
-  pageResults.forEach((page) => {
-    const option = document.createElement("option");
-    option.value = page.page_number;
-    option.textContent = page.page_number;
-    ui.resultPage.append(option);
-  });
+  const pageNumbers = pageResults.map((page) => page.page_number);
+  ui.resultPage.min = String(Math.min(...pageNumbers));
+  ui.resultPage.max = String(Math.max(...pageNumbers));
+  ui.resultPageTotal.textContent = `of ${data.source_page_count}`;
+  ui.pageNavigator.hidden = pageResults.length <= 1;
   ui.resultToolbar.hidden = false;
   ui.copy.disabled = false;
   ui.download.disabled = false;
@@ -768,7 +794,15 @@ window.addEventListener("pointerup", () => {
   positionElementEditor(bboxDrag.group);
   bboxDrag = null;
 });
-ui.resultPage.addEventListener("change", () => showResultPage(ui.resultPage.value));
+ui.previousPage.addEventListener("click", () => moveResultPage(-1));
+ui.nextPage.addEventListener("click", () => moveResultPage(1));
+ui.resultPage.addEventListener("change", jumpToResultPage);
+ui.resultPage.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    jumpToResultPage();
+  }
+});
 ui.editorClose.addEventListener("click", closeElementEditor);
 ui.editorCancel.addEventListener("click", closeElementEditor);
 ui.bboxInputs.forEach((input) => input.addEventListener("change", () => {
